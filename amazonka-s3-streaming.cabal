@@ -1,6 +1,6 @@
 name:                amazonka-s3-streaming
 version:             0.0.1.0
-synopsis:            Initial project template from stack
+synopsis:            Provides conduits to upload data to S3 using the Multipart API
 description:         Please see README.md
 homepage:            https://github.com/Axman6/amazonka-s3-streaming#readme
 license:             BSD3
@@ -8,7 +8,7 @@ license-file:        LICENSE
 author:              Alex Mason
 maintainer:          Alex.Mason@data61.csiro.au
 copyright:           Copyright (c) 2016 Commonwealth Scientific and Industrial Research Organisation (CSIRO)
-category:            Web
+category:            Network, AWS, Cloud, Distributed Computing
 build-type:          Simple
 extra-source-files:  README.md
 cabal-version:       >=1.10
@@ -16,10 +16,11 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Network.AWS.S3.StreamingUpload
+  default-language:    Haskell2010
   build-depends:       base >= 4.7 && < 5
+                       , amazonka
                        , amazonka-core
                        , amazonka-s3
-                       , amazonka
                        , resourcet
                        , conduit
                        , conduit-extra
@@ -28,7 +29,14 @@ library
                        , lens
                        , mtl
                        , exceptions
-  default-language:    Haskell2010
+
+  if impl(ghc < 7.11)
+        build-depends:
+              semigroups >= 0.12
+              , transformers >=0.2
+  
+  -- if impl(ghc < 7.9)
+  --       build-depends:
 
 source-repository head
   type:     git

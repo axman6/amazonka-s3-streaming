@@ -33,8 +33,10 @@ import           Data.Conduit.Binary                    (sourceFile)
 import           Data.ByteString                        (ByteString)
 import qualified Data.ByteString                        as BS
 import           Data.ByteString.Builder
-import           Data.Monoid                            ((<>))
+import           Data.Monoid                            (mempty, (<>))
 -- import           Data.Text                              (Text)
+
+import           Control.Applicative
 
 import           Control.Exception.Lens
 import           Control.Lens
@@ -43,7 +45,7 @@ import           Data.List.NonEmpty                     as NE (NonEmpty,
                                                                nonEmpty)
 
 
-streamUpload :: (MonadResource m, MonadAWS m, HasEnv r, MonadReader r m) -- , AsStreamingUploadError e, MonadError e m)
+streamUpload :: (MonadResource m, MonadAWS m, HasEnv r, MonadReader r m, Applicative m) -- , AsStreamingUploadError e, MonadError e m)
              => CreateMultipartUpload
              -> Sink ByteString m CompleteMultipartUploadResponse
 streamUpload cmu = do
@@ -90,15 +92,15 @@ streamUpload cmu = do
       partUploader :: MonadAWS m => Int -> Builder -> m UploadPartResponse
       partUploader pnum = send . uploadPart bucket key pnum upId . toBody . toLazyByteString
 
-      checkUpload :: Monad m => UploadPartResponse -> m UploadPartResponse
+      checkUpload :: (Monad m, Applicative m) => UploadPartResponse -> m UploadPartResponse
       checkUpload upr = do
         when (upr ^. uprsResponseStatus /= 200) $ fail "Failed to upload piece"
         pure upr
 
-  catching _Error (go mempty 0 1 []) $ \e -> do
+  catching id (go mempty 0 1 []) $ \e -> do
+      -- Whatever happens, we abort the upload and rethrow
       lift $ send (abortMultipartUpload bucket key upId)
       throwM e
-  -- TODO: AbortMultipartUpload if this fails
 
 
 uploadFile :: (MonadAWS m, HasEnv r, MonadReader r m, MonadResource m)
@@ -108,3 +110,9 @@ uploadFile bucket key filepath =
   sourceFile filepath $$ streamUpload (createMultipartUpload bucket key)
 
 -- TODO: This can be more efficient/concurrent if we know we're reading from a file
+
+-- newtype UploadId = UploadId Text
+
+-- data S3Upload m
+--     = Feed UploadId (ByteString -> m (S3Upload m))
+--     | Done
