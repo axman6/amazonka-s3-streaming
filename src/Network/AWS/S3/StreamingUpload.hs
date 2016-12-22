@@ -9,7 +9,13 @@ module Network.AWS.S3.StreamingUpload where
 import           Network.AWS                            (AsError (..),
                                                          HasEnv (..),
                                                          LogLevel (..),
-                                                         MonadAWS, send, toBody)
+                                                         MonadAWS, hashedBody,
+                                                         send, toBody)
+
+import           Network.AWS.Data.Crypto                (Digest, SHA256,
+                                                         hashFinalize, hashInit,
+                                                         hashUpdate)
+
 import           Network.AWS.S3.AbortMultipartUpload
 import           Network.AWS.S3.CompleteMultipartUpload
 import           Network.AWS.S3.CreateMultipartUpload
@@ -29,10 +35,12 @@ import           Control.Monad.Trans.Resource
 
 import           Data.Conduit
 import           Data.Conduit.Binary                    (sourceFile)
+import           Data.Conduit.List                      (sourceList)
 
 import           Data.ByteString                        (ByteString)
 import qualified Data.ByteString                        as BS
 import           Data.ByteString.Builder
+import qualified Data.DList                             as D
 import           Data.Monoid                            (mempty, (<>))
 -- import           Data.Text                              (Text)
 
@@ -44,8 +52,9 @@ import           Control.Lens
 import           Data.List.NonEmpty                     as NE (NonEmpty,
                                                                nonEmpty)
 
+import           Text.Printf                            (printf)
 
-streamUpload :: (MonadResource m, MonadAWS m, HasEnv r, MonadReader r m, Applicative m) -- , AsStreamingUploadError e, MonadError e m)
+streamUpload :: (MonadResource m, MonadAWS m, HasEnv r, MonadReader r m, Applicative m)
              => CreateMultipartUpload
              -> Sink ByteString m CompleteMultipartUploadResponse
 streamUpload cmu = do
@@ -63,41 +72,48 @@ streamUpload cmu = do
       bucket    = cmu  ^. cmuBucket
       key       = cmu  ^. cmuKey
       -- go :: Text -> Builder -> Int -> Int -> Sink ByteString m ()
-      go !bu !bufsize !partnum !completed = Data.Conduit.await >>= \mbs -> case mbs of
+      go !bss !bufsize !ctx !partnum !completed = Data.Conduit.await >>= \mbs -> case mbs of
         Just bs | l <- BS.length bs
                 , bufsize + l <= 6*1024*1024 -> -- Making this 5MB+1 seemed to cause AWS to complain
-                    go (bu <> byteString bs) (bufsize + l) partnum completed
+                    go (D.snoc bss bs) (bufsize + l) (hashUpdate ctx bs) partnum completed
 
                 | otherwise -> do
-                    rs <- lift $ checkUpload =<< partUploader partnum (bu <> byteString bs)
+                    rs <- lift $ do
+                        res <- partUploader partnum
+                                            (bufsize + BS.length bs)
+                                            (hashFinalize (hashUpdate ctx bs))
+                                            (D.toList $ D.snoc bss bs)
+                        checkUpload res
 
-                    logStr $ concat ["\n**** Uploaded part ", show partnum
-                                    ," size: ", show bufsize,"\n"]
-                    go mempty 0 (partnum+1) $ (completedPart partnum <$> (rs ^. uprsETag)) : completed
+                    logStr $ printf "\n**** Uploaded part %d size $d\n" partnum bufsize
+                    go empty 0 hashInit (partnum+1) $ D.snoc completed $ completedPart partnum <$> (rs ^. uprsETag)
 
         Nothing -> lift $ do
-            rs <- checkUpload =<< partUploader partnum bu
+            rs <- checkUpload =<< partUploader partnum bufsize (hashFinalize ctx) (D.toList bss)
 
-            logStr $ concat ["\n**** Uploaded (final) part ", show partnum
-                            ," size: ", show bufsize,"\n"]
+            logStr $ printf "\n**** Uploaded (final) part %d size $d\n" partnum bufsize
 
-            let allParts = (completedPart partnum <$> (rs ^. uprsETag)) : completed
-                -- Parts must be in ascending order
-                prts = NE.nonEmpty =<< reverse <$> sequence allParts
+            let allParts = D.toList $ D.snoc completed $ completedPart partnum <$> (rs ^. uprsETag)
+                prts = NE.nonEmpty =<< sequence allParts
 
             send $ completeMultipartUpload bucket key upId
                     & cMultipartUpload ?~ set cmuParts prts completedMultipartUpload
 
 
-      partUploader :: MonadAWS m => Int -> Builder -> m UploadPartResponse
-      partUploader pnum = send . uploadPart bucket key pnum upId . toBody . toLazyByteString
+      partUploader :: MonadAWS m => Int -> Int -> Digest SHA256 -> [ByteString] -> m UploadPartResponse
+      partUploader pnum size digest
+        = send
+        . uploadPart bucket key pnum upId
+        . toBody
+        . hashedBody digest (fromIntegral size)
+        . sourceList
 
       checkUpload :: (Monad m, Applicative m) => UploadPartResponse -> m UploadPartResponse
       checkUpload upr = do
         when (upr ^. uprsResponseStatus /= 200) $ fail "Failed to upload piece"
         pure upr
 
-  catching id (go mempty 0 1 []) $ \e -> do
+  catching id (go D.empty 0 hashInit 1 D.empty) $ \e -> do
       -- Whatever happens, we abort the upload and rethrow
       lift $ send (abortMultipartUpload bucket key upId)
       throwM e
