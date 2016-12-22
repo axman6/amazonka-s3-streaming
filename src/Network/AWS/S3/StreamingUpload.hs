@@ -12,6 +12,7 @@ module Network.AWS.S3.StreamingUpload
     streamUpload
     , UploadLocation(..)
     , concurrentUpload
+    , abortAllUploads
     , module Network.AWS.S3.CreateMultipartUpload
     , module Network.AWS.S3.CompleteMultipartUpload
     , chunkSize
@@ -31,13 +32,15 @@ import           Network.AWS.Data.Crypto                (Digest, SHA256,
 import           Network.AWS.S3.AbortMultipartUpload
 import           Network.AWS.S3.CompleteMultipartUpload
 import           Network.AWS.S3.CreateMultipartUpload
-import           Network.AWS.S3.Types                   (cmuParts, completedMultipartUpload,
-                                                         completedPart)
+import           Network.AWS.S3.ListMultipartUploads
+import           Network.AWS.S3.Types                   (BucketName, cmuParts, completedMultipartUpload,
+                                                         completedPart, muKey,
+                                                         muUploadId)
 import           Network.AWS.S3.UploadPart
 
 import           Control.Applicative
 import           Control.Category                       ((>>>))
-import           Control.Monad                          (when, (>=>))
+import           Control.Monad                          (forM_, when, (>=>))
 import           Control.Monad.IO.Class                 (MonadIO, liftIO)
 import           Control.Monad.Morph                    (lift)
 import           Control.Monad.Trans.Resource           (MonadBaseControl,
@@ -203,6 +206,15 @@ concurrentUpload ud cmu = do
         send $ completeMultipartUpload bucket key upId
                 & cMultipartUpload ?~ set cmuParts prts completedMultipartUpload
 
+-- | Aborts all uploads in a given bucket - useful for cleaning up.
+abortAllUploads :: (MonadAWS m) => BucketName -> m ()
+abortAllUploads bucket = do
+  rs <- send (listMultipartUploads bucket)
+  forM_ (rs ^. lmursUploads) $ \mu -> do
+    let mki = (,) <$> mu ^. muKey <*> mu ^. muUploadId
+    case mki of
+      Nothing -> pure ()
+      Just (key,uid) -> send (abortMultipartUpload bucket key uid) >> pure ()
 
 
 
