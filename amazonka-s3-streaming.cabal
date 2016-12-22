@@ -45,3 +45,17 @@ library
 source-repository head
   type:     git
   location: https://github.com/Axman6/amazonka-s3-streaming
+
+executable s3upload
+  main-is: Main.hs
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -O2 -eventlog
+  default-language: Haskell2010
+  build-depends: base >= 4.7 && < 5
+                 , amazonka
+                 , amazonka-core
+                 , amazonka-s3
+                 , amazonka-s3-streaming
+                 , conduit-extra
+                 , conduit
+                 , bytestring
+                 , text
