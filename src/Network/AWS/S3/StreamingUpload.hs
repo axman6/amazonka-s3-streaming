@@ -13,9 +13,10 @@ module Network.AWS.S3.StreamingUpload
     , concurrentUpload
     , module Network.AWS.S3.CreateMultipartUpload
     , module Network.AWS.S3.CompleteMultipartUpload
+    , chunkSize
 ) where
 
-import           Network.AWS                            (HasEnv (..),
+import           Network.AWS                            (Error, HasEnv (..),
                                                          LogLevel (..),
                                                          MonadAWS, getFileSize,
                                                          hashedBody, send,
@@ -36,24 +37,24 @@ import           Network.AWS.S3.UploadPart
 import           Control.Applicative
 import           Control.Category                       ((>>>))
 import           Control.Monad                          (when, (>=>))
-import           Control.Monad.Catch
-import           Control.Monad.IO.Class
-import           Control.Monad.Morph
-import           Control.Monad.Trans.Resource
+import           Control.Monad.IO.Class                 (MonadIO, liftIO)
+import           Control.Monad.Morph                    (lift)
+import           Control.Monad.Trans.Resource           (MonadBaseControl,
+                                                         MonadResource, throwM)
 
-import           Data.Conduit
+import           Data.Conduit                           (Sink, await)
 import           Data.Conduit.List                      (sourceList)
 
 import           Data.ByteString                        (ByteString)
 import qualified Data.ByteString                        as BS
-import           Data.ByteString.Builder
+import           Data.ByteString.Builder                (stringUtf8)
 import           System.IO.MMap                         (mmapFileByteString)
 
 import qualified Data.DList                             as D
 import           Data.List                              (unfoldr)
 import           Data.List.NonEmpty                     (nonEmpty)
 
-import           Control.Exception.Lens
+import           Control.Exception.Lens                 (catching, handling)
 import           Control.Lens
 
 import           Text.Printf                            (printf)
@@ -64,6 +65,21 @@ import           Control.Concurrent.Async.Lifted        (forConcurrently)
 chunkSize :: Int
 chunkSize = 6*1024*1024 -- Making this 5MB+1 seemed to cause AWS to complain
 
+
+{- |
+Given a 'CreateMultipartUpload', creates a 'Sink' which will sequentially
+upload the data streamed in in chunks of at least 'chunkSize' and return
+the 'CompleteMultipartUploadResponse'.
+
+If uploading of any parts fails, an attempt is made to abort the Multipart
+upload, but it is likely that if an upload fails this abort may also fail.
+'Network.AWS.S3.ListMultipartUploads' can be used to list any pending
+uploads - it is important to abort multipart uploads because you will
+be charged for storage of the parts until it is completed or aborted.
+See the AWS documentation for more details.
+
+May throw 'Error'
+-}
 streamUpload :: (MonadResource m, MonadAWS m, AWSConstraint r m)
              => CreateMultipartUpload
              -> Sink ByteString m CompleteMultipartUploadResponse
@@ -134,7 +150,7 @@ data UploadLocation
     = FP FilePath -- ^ A file to be uploaded
     | BS ByteString -- ^ A strict 'ByteString'
 
- -- | IO (Int -> IO (Maybe ByteString)) (Either (IO ()) (IO ()))
+ --  IO (Int -> IO (Maybe ByteString)) (Either (IO ()) (IO ()))
         -- part number as input, may be called many times until Nothing is returned,
         -- and a function to close either this part or all parts
 
@@ -146,7 +162,7 @@ and uploaded directly.
 Files are mmapped into 'chunkSize' chunks and each chunk is uploaded in parallel.
 This considerably reduces the memory necessary compared to reading the contents
 into memory as a strict 'ByteString'. The usual caveats about mmaped files apply:
-if the file is modified during this operation, the data become corrupted.
+if the file is modified during this operation, the data may become corrupt.
 
 May throw `Error`, or `IOError`.
 -}
