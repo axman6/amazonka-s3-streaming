@@ -3,12 +3,16 @@
 module Main where
 
 
+import           Data.Conduit                         (($$))
+import           Data.Conduit.Binary                  (sourceHandle)
 import           Data.Text                            (pack)
 import           Network.AWS
 import           Network.AWS.Data.Text                (fromText)
 import           Network.AWS.S3.CreateMultipartUpload
 import           Network.AWS.S3.StreamingUpload
 import           System.Environment
+import           System.IO                            (BufferMode (BlockBuffering),
+                                                       hSetBuffering, stdin)
 
 main :: IO ()
 main = do
@@ -22,8 +26,12 @@ main = do
       of
         Right (env',reg,buck,ky) -> do
           env <- newEnv reg env'
-          res <- runResourceT . runAWS env . concurrentUpload (FP file) $
-                   createMultipartUpload buck ky
+          hSetBuffering stdin (BlockBuffering Nothing)
+          res <- runResourceT . runAWS env $ case file of
+                  -- Stream data from stdin
+                  "-" -> sourceHandle stdin $$ streamUpload (createMultipartUpload buck ky)
+                  -- Read from a file
+                  _   -> concurrentUpload (FP file) $ createMultipartUpload buck ky
           print res
         Left err -> print err >> usage
     ("abort":region:profile:credfile:bucket:_) ->
