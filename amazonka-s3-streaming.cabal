@@ -1,5 +1,5 @@
 name:                amazonka-s3-streaming
-version:             0.1.0.1
+version:             0.1.0.2
 synopsis:            Provides conduits to upload data to S3 using the Multipart API
 description:         Please see README.md
 homepage:            https://github.com/Axman6/amazonka-s3-streaming#readme

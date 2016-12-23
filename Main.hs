@@ -1,4 +1,4 @@
-
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
@@ -24,8 +24,12 @@ main = do
                  <*> fromText (pack bucket)
                  <*> fromText (pack key)
       of
-        Right (env',reg,buck,ky) -> do
-          env <- newEnv reg env'
+        Right (creds,reg,buck,ky) -> do
+#if !MIN_VERSION_amazonka(1,4,4)
+          env <- newEnv reg creds
+#else
+          env <- newEnv creds
+#endif
           hSetBuffering stdin (BlockBuffering Nothing)
           res <- runResourceT . runAWS env $ case file of
                   -- Stream data from stdin
@@ -39,8 +43,12 @@ main = do
                 <*> fromText (pack region)
                 <*> fromText (pack bucket)
       of
-        Right (env',reg,buck) -> do
-          env <- newEnv reg env'
+        Right (creds,reg,buck) -> do
+#if !MIN_VERSION_amazonka(1,4,4)
+          env <- newEnv reg creds
+#else
+          env <- newEnv creds
+#endif
           res <- runResourceT . runAWS env . abortAllUploads $ buck
           print res
         Left err -> print err >> usage
@@ -48,9 +56,13 @@ main = do
     _ -> usage
 
 usage :: IO ()
-usage = putStrLn "\nUsage: \n\n\
-                  \  Upload file:\n\
-                  \    s3upload <region:ap-southeast-2> <profile> <credentials file:$HOME/.aws/credentials> <bucket> <object key> <file to upload>\n\
-                  \  Abort all unfinished uploads for bucket:\n\
-                  \    s3upload abort <region:ap-southeast-2> <profile> <credentials file:$HOME/.aws/credentials> <bucket>\n\n\
-                  \all arguments must be supplied"
+usage = putStrLn . unlines $
+  [ "Usage: \n"
+  , "  Upload file:"
+  , "    s3upload <region:ap-southeast-2> <profile> <credentials file:$HOME/.aws/credentials> <bucket> <object key> <file to upload>"
+  , "  Abort all unfinished uploads for bucket:"
+  , "    s3upload abort <region:ap-southeast-2> <profile> <credentials file:$HOME/.aws/credentials> <bucket>\n"
+  , "all arguments must be supplied - the region will be obtained from the AWS_REGION env var"
+  , "if compiled with amazonka > 1.4.4, but must still be supplied (making an option parsing library"
+  , "a dependency of this package seemed overkill)"
+ ]
