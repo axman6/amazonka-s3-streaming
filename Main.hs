@@ -50,7 +50,7 @@ main = do
 usage :: IO ()
 usage = putStrLn "\nUsage: \n\n\
                   \  Upload file:\n\
-                  \    s3upload <region:Sydney> <profile> <credentials file:~/.aws/credentials> <bucket> <object key> <file to upload>\n\
+                  \    s3upload <region:ap-southeast-2> <profile> <credentials file:$HOME/.aws/credentials> <bucket> <object key> <file to upload>\n\
                   \  Abort all unfinished uploads for bucket:\n\
-                  \    s3upload abort <region:Sydney> <profile> <credentials file:~/.aws/credentials> <bucket>\n\n\
+                  \    s3upload abort <region:ap-southeast-2> <profile> <credentials file:$HOME/.aws/credentials> <bucket>\n\n\
                   \all arguments must be supplied"
