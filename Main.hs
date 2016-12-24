@@ -20,7 +20,7 @@ main = do
   case args of
     (region:profile:credfile:bucket:key:file:_) ->
       case (,,,) <$> (FromFile <$> fromText (pack profile) <*> pure credfile)
-                 <*> fromText (pack region)
+                 <*> (fromText (pack region) :: Either String Region)
                  <*> fromText (pack bucket)
                  <*> fromText (pack key)
       of
@@ -40,7 +40,7 @@ main = do
         Left err -> print err >> usage
     ("abort":region:profile:credfile:bucket:_) ->
       case (,,) <$> (FromFile <$> fromText (pack profile) <*> pure credfile)
-                <*> fromText (pack region)
+                <*> (fromText (pack region) :: Either String Region)
                 <*> fromText (pack bucket)
       of
         Right (creds,reg,buck) -> do
