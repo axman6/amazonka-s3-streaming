@@ -29,9 +29,9 @@ main = do
                  <*> fromText (pack bucket)
                  <*> fromText (pack key)
       of
-        Right (creds,reg,buck,ky) -> do
+        Right (creds,_reg,buck,ky) -> do
 #if !MIN_VERSION_amazonka(1,4,4)
-          env <- newEnv reg creds
+          env <- newEnv _reg creds
 #else
           env <- newEnv creds
 #endif
@@ -48,9 +48,9 @@ main = do
                 <*> (fromText (pack region) :: Either String Region)
                 <*> fromText (pack bucket)
       of
-        Right (creds,reg,buck) -> do
+        Right (creds,_reg,buck) -> do
 #if !MIN_VERSION_amazonka(1,4,4)
-          env <- newEnv reg creds
+          env <- newEnv _reg creds
 #else
           env <- newEnv creds
 #endif
