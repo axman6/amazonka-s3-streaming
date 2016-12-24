@@ -18,52 +18,60 @@ module Network.AWS.S3.StreamingUpload
     , chunkSize
 ) where
 
-import           Network.AWS                            (Error, HasEnv (..),
-                                                         LogLevel (..),
-                                                         MonadAWS, getFileSize,
-                                                         hashedBody, send,
-                                                         toBody)
+import Network.AWS
+       ( Error
+       , HasEnv (..)
+       , LogLevel (..)
+       , MonadAWS
+       , getFileSize
+       , hashedBody
+       , send
+       , toBody
+       )
 
-import           Control.Monad.Trans.AWS                (AWSConstraint)
-import           Network.AWS.Data.Crypto                (Digest, SHA256,
-                                                         hashFinalize, hashInit,
-                                                         hashUpdate)
+import Control.Monad.Trans.AWS (AWSConstraint)
+import Network.AWS.Data.Crypto
+       (Digest, SHA256, hashFinalize, hashInit, hashUpdate)
 
-import           Network.AWS.S3.AbortMultipartUpload
-import           Network.AWS.S3.CompleteMultipartUpload
-import           Network.AWS.S3.CreateMultipartUpload
-import           Network.AWS.S3.ListMultipartUploads
-import           Network.AWS.S3.Types                   (BucketName, cmuParts, completedMultipartUpload,
-                                                         completedPart, muKey,
-                                                         muUploadId)
-import           Network.AWS.S3.UploadPart
+import Network.AWS.S3.AbortMultipartUpload
+import Network.AWS.S3.CompleteMultipartUpload
+import Network.AWS.S3.CreateMultipartUpload
+import Network.AWS.S3.ListMultipartUploads
+import Network.AWS.S3.Types
+       ( BucketName
+       , cmuParts
+       , completedMultipartUpload
+       , completedPart
+       , muKey
+       , muUploadId
+       )
+import Network.AWS.S3.UploadPart
 
-import           Control.Applicative
-import           Control.Category                       ((>>>))
-import           Control.Monad                          (forM_, when, (>=>))
-import           Control.Monad.IO.Class                 (MonadIO, liftIO)
-import           Control.Monad.Morph                    (lift)
-import           Control.Monad.Trans.Resource           (MonadBaseControl,
-                                                         MonadResource, throwM)
+import Control.Applicative
+import Control.Category             ((>>>))
+import Control.Monad                (forM_, when, (>=>))
+import Control.Monad.IO.Class       (MonadIO, liftIO)
+import Control.Monad.Morph          (lift)
+import Control.Monad.Trans.Resource (MonadBaseControl, MonadResource, throwM)
 
-import           Data.Conduit                           (Sink, await)
-import           Data.Conduit.List                      (sourceList)
+import Data.Conduit      (Sink, await)
+import Data.Conduit.List (sourceList)
 
-import           Data.ByteString                        (ByteString)
-import qualified Data.ByteString                        as BS
-import           Data.ByteString.Builder                (stringUtf8)
-import           System.IO.MMap                         (mmapFileByteString)
+import           Data.ByteString         (ByteString)
+import qualified Data.ByteString         as BS
+import           Data.ByteString.Builder (stringUtf8)
+import           System.IO.MMap          (mmapFileByteString)
 
-import qualified Data.DList                             as D
-import           Data.List                              (unfoldr)
-import           Data.List.NonEmpty                     (nonEmpty)
+import qualified Data.DList         as D
+import           Data.List          (unfoldr)
+import           Data.List.NonEmpty (nonEmpty)
 
-import           Control.Exception.Lens                 (catching, handling)
-import           Control.Lens
+import Control.Exception.Lens (catching, handling)
+import Control.Lens
 
-import           Text.Printf                            (printf)
+import Text.Printf (printf)
 
-import           Control.Concurrent.Async.Lifted        (forConcurrently)
+import Control.Concurrent.Async.Lifted (forConcurrently)
 
 -- | Minimum size of data which will be sent in a single part, currently 6MB
 chunkSize :: Int
@@ -213,7 +221,7 @@ abortAllUploads bucket = do
   forM_ (rs ^. lmursUploads) $ \mu -> do
     let mki = (,) <$> mu ^. muKey <*> mu ^. muUploadId
     case mki of
-      Nothing -> pure ()
+      Nothing        -> pure ()
       Just (key,uid) -> send (abortMultipartUpload bucket key uid) >> pure ()
 
 

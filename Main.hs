@@ -3,16 +3,17 @@
 module Main where
 
 
-import           Data.Conduit                         (($$))
-import           Data.Conduit.Binary                  (sourceHandle)
-import           Data.Text                            (pack)
-import           Network.AWS
-import           Network.AWS.Data.Text                (fromText)
-import           Network.AWS.S3.CreateMultipartUpload
-import           Network.AWS.S3.StreamingUpload
-import           System.Environment
-import           System.IO                            (BufferMode (BlockBuffering),
-                                                       hSetBuffering, stdin)
+import Data.Conduit        (($$))
+import Data.Conduit.Binary (sourceHandle)
+import Data.Text           (pack)
+
+import Network.AWS
+import Network.AWS.Data.Text                (fromText)
+import Network.AWS.S3.CreateMultipartUpload
+import Network.AWS.S3.StreamingUpload
+
+import System.Environment
+import System.IO          (BufferMode(BlockBuffering), hSetBuffering, stdin)
 
 main :: IO ()
 main = do
