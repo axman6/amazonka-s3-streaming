@@ -15,6 +15,10 @@ import Network.AWS.S3.StreamingUpload
 import System.Environment
 import System.IO          (BufferMode(BlockBuffering), hSetBuffering, stdin)
 
+#if !MIN_VERSION_base(4,8,0)
+import Control.Applicative (pure, (<$>), (<*>))
+#endif
+
 main :: IO ()
 main = do
   args <- getArgs

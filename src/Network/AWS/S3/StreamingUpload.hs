@@ -19,9 +19,8 @@ module Network.AWS.S3.StreamingUpload
 ) where
 
 import Network.AWS
-       ( Error
-       , HasEnv (..)
-       , LogLevel (..)
+       ( HasEnv(..)
+       , LogLevel(..)
        , MonadAWS
        , getFileSize
        , hashedBody
@@ -90,7 +89,7 @@ uploads - it is important to abort multipart uploads because you will
 be charged for storage of the parts until it is completed or aborted.
 See the AWS documentation for more details.
 
-May throw 'Error'
+May throw 'Network.AWS.Error'
 -}
 streamUpload :: (MonadResource m, MonadAWS m, AWSConstraint r m)
              => CreateMultipartUpload
@@ -176,7 +175,7 @@ This considerably reduces the memory necessary compared to reading the contents
 into memory as a strict 'ByteString'. The usual caveats about mmaped files apply:
 if the file is modified during this operation, the data may become corrupt.
 
-May throw `Error`, or `IOError`.
+May throw `Network.AWS.Error`, or `IOError`.
 -}
 concurrentUpload :: (MonadAWS m, MonadBaseControl IO m)
                  => UploadLocation -> CreateMultipartUpload -> m CompleteMultipartUploadResponse
