@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -101,7 +102,7 @@ streamUpload cmu = do
   let logStr :: MonadIO m => String -> m ()
       logStr = liftIO . logger Info . stringUtf8
 
-  cmur <- lift (send cmu)
+  cmur <- lift $ send cmu
   when (cmur ^. cmursResponseStatus /= 200) $
     fail "Failed to create upload"
 
@@ -123,9 +124,11 @@ streamUpload cmu = do
 
                     logStr $ printf "\n**** Uploaded part %d size $d\n" partnum bufsize
                     let part = completedPart partnum <$> (rs ^. uprsETag)
+#if MIN_VERSION_amazonka_s3(1,4,1)
                         !_ = rnf part
+#endif
                     liftIO performGC
-                    go empty 0 hashInit (partnum+1) $ D.snoc completed part
+                    go empty 0 hashInit (partnum+1) . D.snoc completed $! part
 
         Nothing -> lift $ do
             rs <- partUploader partnum bufsize (hashFinalize ctx) bss

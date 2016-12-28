@@ -31,7 +31,7 @@ library
                        , dlist
                        , lifted-async
                        , mmap
-                       , deepseq
+                       , deepseq          >= 1.4
 
   if impl(ghc < 7.11)
     build-depends:
