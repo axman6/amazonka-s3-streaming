@@ -140,8 +140,8 @@ streamUpload cmu = do
                     let allParts = D.toList $ D.snoc completed $ completedPart partnum <$> (rs ^. uprsETag)
                     pure $ nonEmpty =<< sequence allParts
                 else do
-                  logStr $ printf "\n**** No final data to upload\n" partnum bufsize
-                  pure $ nonEmpty =<< sequence (D.toList completed)
+                    logStr $ printf "\n**** No final data to upload\n"
+                    pure $ nonEmpty =<< sequence (D.toList completed)
 
             send $ completeMultipartUpload bucket key upId
                     & cMultipartUpload ?~ set cmuParts parts completedMultipartUpload
