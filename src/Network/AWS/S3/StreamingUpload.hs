@@ -131,15 +131,20 @@ streamUpload cmu = do
                     go empty 0 hashInit (partnum+1) . D.snoc completed $! part
 
         Nothing -> lift $ do
-            rs <- partUploader partnum bufsize (hashFinalize ctx) bss
+            parts <- if bufsize > 0
+                then do
+                    rs <- partUploader partnum bufsize (hashFinalize ctx) bss
 
-            logStr $ printf "\n**** Uploaded (final) part %d size $d\n" partnum bufsize
+                    logStr $ printf "\n**** Uploaded (final) part %d size $d\n" partnum bufsize
 
-            let allParts = D.toList $ D.snoc completed $ completedPart partnum <$> (rs ^. uprsETag)
-                prts = nonEmpty =<< sequence allParts
+                    let allParts = D.toList $ D.snoc completed $ completedPart partnum <$> (rs ^. uprsETag)
+                    pure $ nonEmpty =<< sequence allParts
+                else do
+                  logStr $ printf "\n**** No final data to upload\n" partnum bufsize
+                  pure $ nonEmpty =<< sequence (D.toList completed)
 
             send $ completeMultipartUpload bucket key upId
-                    & cMultipartUpload ?~ set cmuParts prts completedMultipartUpload
+                    & cMultipartUpload ?~ set cmuParts parts completedMultipartUpload
 
 
       partUploader :: MonadAWS m => Int -> Int -> Digest SHA256 -> D.DList ByteString -> m UploadPartResponse
