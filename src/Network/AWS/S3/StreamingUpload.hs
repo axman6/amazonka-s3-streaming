@@ -131,7 +131,7 @@ streamUpload cmu = do
                     go empty 0 hashInit (partnum+1) . D.snoc completed $! part
 
         Nothing -> lift $ do
-            parts <- if bufsize > 0
+            prts <- if bufsize > 0
                 then do
                     rs <- partUploader partnum bufsize (hashFinalize ctx) bss
 
@@ -144,7 +144,7 @@ streamUpload cmu = do
                     pure $ nonEmpty =<< sequence (D.toList completed)
 
             send $ completeMultipartUpload bucket key upId
-                    & cMultipartUpload ?~ set cmuParts parts completedMultipartUpload
+                    & cMultipartUpload ?~ set cmuParts prts completedMultipartUpload
 
 
       partUploader :: MonadAWS m => Int -> Int -> Digest SHA256 -> D.DList ByteString -> m UploadPartResponse
