@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -61,6 +62,7 @@ import qualified Data.ByteString         as BS
 import           Data.ByteString.Builder (stringUtf8)
 import           System.IO.MMap          (mmapFileByteString)
 
+import           Control.DeepSeq    (rnf)
 import qualified Data.DList         as D
 import           Data.List          (unfoldr)
 import           Data.List.NonEmpty (nonEmpty)
@@ -71,6 +73,7 @@ import Control.Lens
 import Text.Printf (printf)
 
 import Control.Concurrent.Async.Lifted (forConcurrently)
+import System.Mem                      (performGC)
 
 -- | Minimum size of data which will be sent in a single part, currently 6MB
 chunkSize :: Int
@@ -99,7 +102,7 @@ streamUpload cmu = do
   let logStr :: MonadIO m => String -> m ()
       logStr = liftIO . logger Info . stringUtf8
 
-  cmur <- lift (send cmu)
+  cmur <- lift $ send cmu
   when (cmur ^. cmursResponseStatus /= 200) $
     fail "Failed to create upload"
 
@@ -120,17 +123,25 @@ streamUpload cmu = do
                                               (D.snoc bss bs)
 
                     logStr $ printf "\n**** Uploaded part %d size $d\n" partnum bufsize
-
                     let part = completedPart partnum <$> (rs ^. uprsETag)
-                    go empty 0 hashInit (partnum+1) $ D.snoc completed part
+#if MIN_VERSION_amazonka_s3(1,4,1)
+                        !_ = rnf part
+#endif
+                    liftIO performGC
+                    go empty 0 hashInit (partnum+1) . D.snoc completed $! part
 
         Nothing -> lift $ do
-            rs <- partUploader partnum bufsize (hashFinalize ctx) bss
+            prts <- if bufsize > 0
+                then do
+                    rs <- partUploader partnum bufsize (hashFinalize ctx) bss
 
-            logStr $ printf "\n**** Uploaded (final) part %d size $d\n" partnum bufsize
+                    logStr $ printf "\n**** Uploaded (final) part %d size $d\n" partnum bufsize
 
-            let allParts = D.toList $ D.snoc completed $ completedPart partnum <$> (rs ^. uprsETag)
-                prts = nonEmpty =<< sequence allParts
+                    let allParts = D.toList $ D.snoc completed $ completedPart partnum <$> (rs ^. uprsETag)
+                    pure $ nonEmpty =<< sequence allParts
+                else do
+                    logStr $ printf "\n**** No final data to upload\n"
+                    pure $ nonEmpty =<< sequence (D.toList completed)
 
             send $ completeMultipartUpload bucket key upId
                     & cMultipartUpload ?~ set cmuParts prts completedMultipartUpload
