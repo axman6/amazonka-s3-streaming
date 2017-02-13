@@ -69,7 +69,6 @@ import           Text.Printf                            (printf)
 import           Control.Concurrent                     (newQSem, signalQSem,
                                                          waitQSem)
 import           Control.Concurrent.Async.Lifted        (forConcurrently)
-import           Control.Monad.Catch                    (bracket_)
 import           System.Mem                             (performGC)
 
 import           Network.HTTP.Client                    (defaultManagerSettings,
