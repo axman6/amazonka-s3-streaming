@@ -35,6 +35,9 @@ matrix:
     compiler: ": #stack 8.0.1"
     addons: {apt: {packages: [ghc-8.0.1], sources: [hvr-ghc]}}
 
+  - env: BUILD=stack ARGS="--resolver lts-8"
+    compiler: ": #stack 8.0.1"
+    addons: {apt: {packages: [ghc-8.0.2], sources: [hvr-ghc]}}
 
   # We grab the appropriate GHC and cabal-install versions from hvr's PPA. See:
   # https://github.com/hvr/multi-ghc-travis
@@ -45,6 +48,10 @@ matrix:
   
   - env: BUILD=stack ARGS="--resolver lts-7"
     compiler: ": #stack 8.0.1 osx"
+    os: osx
+
+  - env: BUILD=stack ARGS="--resolver lts-8"
+    compiler: ": #stack 8.0.2 osx"
     os: osx
   
   - env: BUILD=cabal GHCVER=7.10.3 CABALVER=1.22
