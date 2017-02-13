@@ -1,5 +1,5 @@
 name:                amazonka-s3-streaming
-version:             0.1.0.4
+version:             0.2.0.0
 synopsis:            Provides conduits to upload data to S3 using the Multipart API
 description:         Please see README.md
 homepage:            https://github.com/Axman6/amazonka-s3-streaming#readme
@@ -10,7 +10,7 @@ maintainer:          Alex.Mason@data61.csiro.au
 copyright:           Copyright (c) 2016 Commonwealth Scientific and Industrial Research Organisation (CSIRO)
 category:            Network, AWS, Cloud, Distributed Computing
 build-type:          Simple
-extra-source-files:  README.md
+extra-source-files:  README.md, Changelog.md
 cabal-version:       >=1.10
 
 library
@@ -28,10 +28,11 @@ library
                        , lens             >= 4.13       && < 5.0
                        , mtl              >= 2.2.1      && < 2.3
                        , exceptions       >= 0.8.2.1    && < 0.9
-                       , dlist
-                       , lifted-async
-                       , mmap
-                       , deepseq          >= 1.4
+                       , dlist            >= 0.8        && < 0.9
+                       , lifted-async     >= 0.9        && < 0.10
+                       , mmap             >= 0.5        && < 0.6
+                       , deepseq          >= 1.4        && < 1.5
+                       , http-client      >= 0.4        && < 0.5
 
   if impl(ghc < 7.11)
     build-depends:

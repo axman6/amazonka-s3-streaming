@@ -3,20 +3,21 @@
 module Main where
 
 
-import Data.Conduit        (($$))
-import Data.Conduit.Binary (sourceHandle)
-import Data.Text           (pack)
+import           Data.Conduit                         (($$))
+import           Data.Conduit.Binary                  (sourceHandle)
+import           Data.Text                            (pack)
 
-import Network.AWS
-import Network.AWS.Data.Text                (fromText)
-import Network.AWS.S3.CreateMultipartUpload
-import Network.AWS.S3.StreamingUpload
+import           Network.AWS
+import           Network.AWS.Data.Text                (fromText)
+import           Network.AWS.S3.CreateMultipartUpload
+import           Network.AWS.S3.StreamingUpload
 
-import System.Environment
-import System.IO          (BufferMode(BlockBuffering), hSetBuffering, stdin)
+import           System.Environment
+import           System.IO                            (BufferMode(BlockBuffering),
+                                                       hSetBuffering, stdin)
 
 #if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (pure, (<$>), (<*>))
+import           Control.Applicative                  (pure, (<$>), (<*>))
 #endif
 
 main :: IO ()
@@ -38,9 +39,9 @@ main = do
           hSetBuffering stdin (BlockBuffering Nothing)
           res <- runResourceT . runAWS env $ case file of
                   -- Stream data from stdin
-                  "-" -> sourceHandle stdin $$ streamUpload (createMultipartUpload buck ky)
+                  "-" -> sourceHandle stdin $$ streamUpload Nothing (createMultipartUpload buck ky)
                   -- Read from a file
-                  _   -> concurrentUpload (FP file) $ createMultipartUpload buck ky
+                  _   -> concurrentUpload Nothing Nothing (FP file) $ createMultipartUpload buck ky
           print res
         Left err -> print err >> usage
     ("abort":region:profile:credfile:bucket:_) ->
