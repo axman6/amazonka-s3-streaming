@@ -128,7 +128,7 @@ streamUpload mcs cmu = do
                                               (hashFinalize $ hashUpdate ctx bs)
                                               (D.snoc bss bs)
 
-                    logStr $ printf "\n**** Uploaded part %d size $d\n" partnum bufsize
+                    logStr $ printf "\n**** Uploaded part %d size %d\n" partnum bufsize
                     let part = completedPart partnum <$> (rs ^. uprsETag)
 #if MIN_VERSION_amazonka_s3(1,4,1)
                         !_ = rnf part
@@ -141,7 +141,7 @@ streamUpload mcs cmu = do
                 then do
                     rs <- partUploader partnum bufsize (hashFinalize ctx) bss
 
-                    logStr $ printf "\n**** Uploaded (final) part %d size $d\n" partnum bufsize
+                    logStr $ printf "\n**** Uploaded (final) part %d size %d\n" partnum bufsize
 
                     let allParts = D.toList $ D.snoc completed $ completedPart partnum <$> (rs ^. uprsETag)
                     pure $ nonEmpty =<< sequence allParts
