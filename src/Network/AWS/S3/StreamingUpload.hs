@@ -105,7 +105,7 @@ streamUpload :: (MonadResource m, AWSConstraint r m, MonadAWS m)
 streamUpload mcs cmu = do
   logger <- lift $ view envLogger
   let logStr :: MonadIO m => String -> m ()
-      logStr = liftIO . logger Info . stringUtf8
+      logStr = liftIO . logger Debug . stringUtf8
       chunkSize = maybe minimumChunkSize (max minimumChunkSize) mcs
 
   cmur <- lift $ send cmu

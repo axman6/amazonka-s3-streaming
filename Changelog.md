@@ -1,5 +1,11 @@
 # Changelog - amazonka-s3-streaming
 
+# 0.2.0.3
+ * Make all library generated messages use Debug level not Info
+
+# 0.2.0.2
+ * Update to mmorph < 1.2
+
 ## 0.2.0.1
  * Fixed a bug with the printf format strings which would lead to a crash (Thanks @JakeOShannessy
    for reporting).
