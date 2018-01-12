@@ -18,7 +18,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Network.AWS.S3.StreamingUpload
   default-language:    Haskell2010
-  build-depends:       base >= 4.7 && < 5
+  build-depends:       base >= 4.6 && < 5
                        , amazonka         >= 1.3.7      && < 1.5
                        , amazonka-core    >= 1.3.7      && < 1.5
                        , amazonka-s3      >= 1.3.7      && < 1.5
