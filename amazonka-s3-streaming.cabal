@@ -39,7 +39,7 @@ library
     build-depends:
       semigroups >= 0.12
       , transformers >=0.4
-  if impl(ghc <= 7.8)
+  if impl(ghc == 7.8.*)
     build-depends:
       foundation == 0.0.15
   
