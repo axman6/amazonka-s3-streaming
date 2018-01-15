@@ -1,5 +1,5 @@
 name:                amazonka-s3-streaming
-version:             0.2.0.3
+version:             0.2.0.4
 synopsis:            Provides conduits to upload data to S3 using the Multipart API
 description:         Provides a conduit based streaming interface and a concurrent interface to
                      uploading data to S3 using the Multipart API. Also provides method to upload
