@@ -231,14 +231,14 @@ concurrentUpload mcs mnt ud cmu = do
         sem <- liftIO $ newQSem nThreads
         umrs <- case ud of
             BS bs ->
-                    let chunkSize = calcChunkSize $ BS.length bs
-                    in forConcurrently (zip [1..] $ chunksOf chunkSize bs) $ \(partnum, b) -> do
-                        liftIO $ waitQSem sem
-                        logStr $ "Starting part: " ++ show partnum
-                        umr <- send . uploadPart bucket key partnum upId . toBody $ b
-                        logStr $ "Finished part: " ++ show partnum
-                        liftIO $ signalQSem sem
-                        pure $ completedPart partnum <$> (umr ^. uprsETag)
+                let chunkSize = calcChunkSize $ BS.length bs
+                in forConcurrently (zip [1..] $ chunksOf chunkSize bs) $ \(partnum, b) -> do
+                    liftIO $ waitQSem sem
+                    logStr $ "Starting part: " ++ show partnum
+                    umr <- send . uploadPart bucket key partnum upId . toBody $ b
+                    logStr $ "Finished part: " ++ show partnum
+                    liftIO $ signalQSem sem
+                    pure $ completedPart partnum <$> (umr ^. uprsETag)
 
             FP fp -> do
                 fsize <- liftIO $ getFileSize fp
