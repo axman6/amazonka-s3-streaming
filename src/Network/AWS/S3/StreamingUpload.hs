@@ -46,7 +46,7 @@ import           Control.Monad.IO.Class                 (MonadIO, liftIO)
 import           Control.Monad.Morph                    (lift)
 import           Control.Monad.Reader.Class             (local)
 import           Control.Monad.Trans.Resource           (MonadBaseControl,
-                                                         MonadResource, throwM)
+                                                         MonadResource)
 
 import           Data.Conduit                           (Sink, await)
 import           Data.Conduit.List                      (sourceList)
@@ -61,8 +61,9 @@ import qualified Data.DList                             as D
 import           Data.List                              (unfoldr)
 import           Data.List.NonEmpty                     (nonEmpty)
 
-import           Control.Exception.Lens                 (catching, handling)
-import           Control.Lens
+import           Control.Lens                           (set, view)
+import           Control.Lens.Operators
+import           Control.Monad.Catch                    (onException)
 
 import           Text.Printf                            (printf)
 
@@ -168,8 +169,7 @@ streamUpload mcs cmu = do
         when (upr ^. uprsResponseStatus /= 200) $ fail "Failed to upload piece"
         return upr
 
-  catching id (go D.empty 0 hashInit 1 D.empty) $ \e ->
-      lift (send (abortMultipartUpload bucket key upId)) >> throwM e
+  go D.empty 0 hashInit 1 D.empty `onException` lift (send (abortMultipartUpload bucket key upId))
       -- Whatever happens, we abort the upload and rethrow
 
 
@@ -219,8 +219,6 @@ concurrentUpload mcs mnt ud cmu = do
             let chunkSize' = maybe minimumChunkSize (max minimumChunkSize) mcs
             in if len `div` chunkSize' >= 10000 then len `div` 9999 else chunkSize'
 
-        -- hndlr :: SomeException -> m CompleteMultipartUploadResponse
-        hndlr e = send (abortMultipartUpload bucket key upId) >> throwM e
     mgr <- view envManager
     let mConnCount = mMaxConns mgr
         nThreads = maybe mConnCount (max 1) mnt
@@ -229,7 +227,7 @@ concurrentUpload mcs mnt ud cmu = do
                     mgr' <- liftIO $ newManager  defaultManagerSettings{managerConnCount = nThreads}
                     local (envManager .~ mgr') run
                 else run
-    exec $ handling id hndlr $ do
+    exec $ flip onException (send (abortMultipartUpload bucket key upId)) $ do
         sem <- liftIO $ newQSem nThreads
         umrs <- case ud of
             BS bs ->
