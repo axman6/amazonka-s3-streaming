@@ -1,9 +1,15 @@
 # Changelog - amazonka-s3-streaming
 
-# 0.2.0.3
+## 0.2.0.5
+- Fix compatibility with 
+
+## 0.2.0.4
+- Make building s3upload executable optional
+
+## 0.2.0.3
  * Make all library generated messages use Debug level not Info
 
-# 0.2.0.2
+## 0.2.0.2
  * Update to mmorph < 1.2
 
 ## 0.2.0.1
