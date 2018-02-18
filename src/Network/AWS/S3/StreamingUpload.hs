@@ -75,7 +75,6 @@ import           System.Mem                             (performGC)
 import           Network.HTTP.Client                    (defaultManagerSettings,
                                                          managerConnCount,
                                                          newManager)
-import           Network.HTTP.Client.Internal           (mMaxConns)
 
 type ChunkSize = Int
 type NumThreads = Int
@@ -219,8 +218,7 @@ concurrentUpload mcs mnt ud cmu = do
             let chunkSize' = maybe minimumChunkSize (max minimumChunkSize) mcs
             in if len `div` chunkSize' >= 10000 then len `div` 9999 else chunkSize'
 
-    mgr <- view envManager
-    let mConnCount = mMaxConns mgr
+    let mConnCount = managerConnCount defaultManagerSettings
         nThreads = maybe mConnCount (max 1) mnt
         exec run = if maybe False (> mConnCount) mnt
                 then do
