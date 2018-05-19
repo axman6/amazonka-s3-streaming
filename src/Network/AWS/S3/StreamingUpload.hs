@@ -44,12 +44,15 @@ import           Control.Category                       ((>>>))
 import           Control.Monad                          (forM_, when, (>=>))
 import           Control.Monad.IO.Class                 (MonadIO, liftIO)
 import           Control.Monad.Morph                    (lift)
-import           Control.Monad.Reader.Class             (MonadReader,
-                                                         local)
-import           Control.Monad.Trans.Resource           (MonadBaseControl,
-                                                         MonadResource)
+import           Control.Monad.Reader.Class             (local)
 
-import           Data.Conduit                           (Sink, await)
+#if MIN_VERSION_resourcet(1,2,1)
+import           Control.Monad.Trans.Resource           (MonadResource, MonadUnliftIO)
+#else
+import           Control.Monad.Trans.Resource           (MonadResource, MonadBaseControl)
+#endif
+
+import           Data.Conduit                           (Sink, await, catchC)
 import           Data.Conduit.List                      (sourceList)
 
 import           Data.ByteString                        (ByteString)
@@ -64,13 +67,17 @@ import           Data.List.NonEmpty                     (nonEmpty)
 
 import           Control.Lens                           (set, view)
 import           Control.Lens.Operators
-import           Control.Monad.Catch                    (onException)
+import           Control.Monad.Catch                    (throwM, onException, SomeException)
 
 import           Text.Printf                            (printf)
 
 import           Control.Concurrent                     (newQSem, signalQSem,
                                                          waitQSem)
-import           Control.Concurrent.Async.Lifted        (forConcurrently)
+#if MIN_VERSION_resourcet(1,2,1)
+import           UnliftIO.Async                         (forConcurrently)
+#else
+import Control.Concurrent.Async.Lifted                  (forConcurrently)
+#endif
 import           System.Mem                             (performGC)
 
 import           Network.HTTP.Client                    (defaultManagerSettings,
@@ -99,7 +106,11 @@ See the AWS documentation for more details.
 
 May throw 'Network.AWS.Error'
 -}
-streamUpload :: (MonadResource m, MonadAWS m)
+#if MIN_VERSION_resourcet(1,2,1)
+streamUpload :: (MonadResource m, MonadAWS m, MonadUnliftIO m)
+#else
+streamUpload :: (MonadResource m, MonadAWS m, MonadBaseControl IO m)
+#endif
              => Maybe ChunkSize -- ^ Optional chunk size
              -> CreateMultipartUpload -- ^ Upload location
              -> Sink ByteString m CompleteMultipartUploadResponse
@@ -169,7 +180,9 @@ streamUpload mcs cmu = do
         when (upr ^. uprsResponseStatus /= 200) $ fail "Failed to upload piece"
         return upr
 
-  go D.empty 0 hashInit 1 D.empty `onException` lift (send (abortMultipartUpload bucket key upId))
+  go D.empty 0 hashInit 1 D.empty `catchC` \(e :: SomeException) -> do
+    lift $ send $ abortMultipartUpload bucket key upId
+    throwM e
       -- Whatever happens, we abort the upload and rethrow
 
 
@@ -197,7 +210,11 @@ May throw `Network.AWS.Error`, or `IOError`; an attempt is made to cancel the
 multipart upload on any error, but this may also fail if, for example, the network
 connection has been broken. See `abortAllUploads` for a crude cleanup method.
 -}
+#if MIN_VERSION_resourcet(1,2,1)
+concurrentUpload :: (MonadAWS m, MonadUnliftIO m)
+#else
 concurrentUpload :: (MonadAWS m, MonadBaseControl IO m)
+#endif
                  => Maybe ChunkSize -- ^ Optional chunk size
                  -> Maybe NumThreads -- ^ Optional number of threads to upload with
                  -> UploadLocation -- ^ Whether to upload a file on disk or a `ByteString` that's already in memory.
