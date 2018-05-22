@@ -19,13 +19,13 @@ module Network.AWS.S3.StreamingUpload
     , minimumChunkSize
 ) where
 
-import           Network.AWS                            (HasEnv(..),
+import           Network.AWS                            (AWS, HasEnv(..),
                                                          LogLevel(..), MonadAWS,
                                                          getFileSize,
-                                                         hashedBody, send,
+                                                         hashedBody, liftAWS,
+                                                         send,
                                                          toBody)
 
-import           Control.Monad.Trans.AWS                (AWSConstraint)
 import           Network.AWS.Data.Crypto                (Digest, SHA256,
                                                          hashFinalize, hashInit,
                                                          hashUpdate)
@@ -44,7 +44,8 @@ import           Control.Category                       ((>>>))
 import           Control.Monad                          (forM_, when, (>=>))
 import           Control.Monad.IO.Class                 (MonadIO, liftIO)
 import           Control.Monad.Morph                    (lift)
-import           Control.Monad.Reader.Class             (local)
+import           Control.Monad.Reader.Class             (MonadReader,
+                                                         local)
 import           Control.Monad.Trans.Resource           (MonadBaseControl,
                                                          MonadResource)
 
@@ -98,12 +99,12 @@ See the AWS documentation for more details.
 
 May throw 'Network.AWS.Error'
 -}
-streamUpload :: (MonadResource m, AWSConstraint r m, MonadAWS m)
+streamUpload :: (MonadResource m, MonadAWS m)
              => Maybe ChunkSize -- ^ Optional chunk size
              -> CreateMultipartUpload -- ^ Upload location
              -> Sink ByteString m CompleteMultipartUploadResponse
 streamUpload mcs cmu = do
-  logger <- lift $ view envLogger
+  logger <- lift $ liftAWS $ view envLogger
   let logStr :: MonadIO m => String -> m ()
       logStr = liftIO . logger Debug . stringUtf8
       chunkSize = maybe minimumChunkSize (max minimumChunkSize) mcs
@@ -196,7 +197,7 @@ May throw `Network.AWS.Error`, or `IOError`; an attempt is made to cancel the
 multipart upload on any error, but this may also fail if, for example, the network
 connection has been broken. See `abortAllUploads` for a crude cleanup method.
 -}
-concurrentUpload :: (AWSConstraint r m, MonadAWS m, MonadBaseControl IO m)
+concurrentUpload :: (MonadAWS m, MonadBaseControl IO m)
                  => Maybe ChunkSize -- ^ Optional chunk size
                  -> Maybe NumThreads -- ^ Optional number of threads to upload with
                  -> UploadLocation -- ^ Whether to upload a file on disk or a `ByteString` that's already in memory.
@@ -206,7 +207,7 @@ concurrentUpload mcs mnt ud cmu = do
     cmur <- send cmu
     when (cmur ^. cmursResponseStatus /= 200) $
         fail "Failed to create upload"
-    logger <- view envLogger
+    logger <- liftAWS $ view envLogger
     let logStr :: MonadIO m => String -> m ()
         logStr = liftIO . logger Info . stringUtf8
     let Just upId = cmur ^. cmursUploadId
@@ -220,11 +221,12 @@ concurrentUpload mcs mnt ud cmu = do
 
     let mConnCount = managerConnCount defaultManagerSettings
         nThreads = maybe mConnCount (max 1) mnt
+        exec :: MonadAWS m => AWS a -> m a
         exec run = if maybe False (> mConnCount) mnt
                 then do
                     mgr' <- liftIO $ newManager  defaultManagerSettings{managerConnCount = nThreads}
-                    local (envManager .~ mgr') run
-                else run
+                    liftAWS $ local (envManager .~ mgr') run
+                else liftAWS run
     exec $ flip onException (send (abortMultipartUpload bucket key upId)) $ do
         sem <- liftIO $ newQSem nThreads
         umrs <- case ud of
