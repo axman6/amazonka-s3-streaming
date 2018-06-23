@@ -48,6 +48,9 @@ import           Control.Monad.Reader.Class             (local)
 
 #if MIN_VERSION_resourcet(1,2,1)
 import           Control.Monad.Trans.Resource           (MonadResource, MonadUnliftIO)
+#if !MIN_VERSION_amazonka(1,6,1)
+import           Control.Monad.Trans.Control            (MonadBaseControl)
+#endif
 #else
 import           Control.Monad.Trans.Resource           (MonadResource, MonadBaseControl)
 #endif
@@ -106,7 +109,7 @@ See the AWS documentation for more details.
 
 May throw 'Network.AWS.Error'
 -}
-#if MIN_VERSION_resourcet(1,2,1)
+#if MIN_VERSION_conduit(1,3,0)
 streamUpload :: (MonadResource m, MonadAWS m, MonadUnliftIO m)
 #else
 streamUpload :: (MonadResource m, MonadAWS m, MonadBaseControl IO m)
