@@ -1,0 +1,102 @@
+-- cabal-install version for all jobs
+cabal-install-version: 2.4
+
+-- jobs (N:M - cabal:ghc)
+jobs:
+
+-- Jobs selection across packages
+jobs-selection: uniform
+
+-- Copy ? fields from cabal.project fields
+copy-fields: some
+
+-- --ghc-options for local packages
+local-ghc-options:
+
+-- Disable caching
+cache: True
+
+-- Make cabal less noisy
+cabal-noise: True
+
+-- Skip separate dependency installation step
+install-dependencies: True
+
+-- Specify 'constraint: ... installed' packages
+installed:
+
+-- Build and run tests with
+tests: True
+
+-- Build benchmarks
+benchmarks: True
+
+-- Haddock step
+haddock: True
+
+-- Build without tests and benchmarks
+no-tests-no-benchmarks: True
+
+-- Make unconstrained build
+unconstrained: True
+
+-- Disable cabal check run
+cabal-check: True
+
+-- Enable builds only for specific branches
+branches:
+
+-- Enable IRC notifications to given channel (e.g. 'irc.freenode.org#haskell-lens')
+irc-channels:
+
+-- Project name (used for IRC notifications), defaults to package name or name of first package listed in cabal.project file
+project-name:
+
+-- Build steps to fold
+folds:
+
+-- Add ghc-head job
+ghc-head: True
+
+-- Add postgresql service
+postgresql: False
+
+-- Environment variables per job (e.g. `8.0.2:HADDOCK=false`)
+env:
+
+-- Allow failures of particular GHC version
+allow-failures: False
+
+-- [Discouraged] Assume there are only GHCs last in major series: 8.2.* will match only 8.2.2
+last-in-series: False
+
+-- Jobs to additionally build with OSX
+osx: 8.4, 8.6
+
+-- Additional apt packages to install
+apt:
+
+-- Enable Doctest job
+doctest: False
+
+-- Additional Doctest options
+doctest-options:
+
+-- Doctest version
+doctest-version: ==0.16.*
+
+-- Enable HLint job
+hlint: False
+
+-- Specify HLint job
+hlint-job: latest
+
+-- Use specific .hlint.yaml
+hlint-yaml:
+
+-- Additional HLint options
+hlint-options:
+
+-- HLint version
+hlint-version: ==2.1.*
+
