@@ -3,22 +3,22 @@
 module Main where
 
 
-import           Data.Conduit                         ((.|), runConduit)
-import           Data.Conduit.Binary                  (sourceHandle)
-import           Data.Text                            (pack)
+import Data.Conduit        (runConduit, (.|))
+import Data.Conduit.Binary (sourceHandle)
+import Data.Text           (pack)
 
-import           Network.AWS
-import           Network.AWS.Data.Text                (fromText)
-import           Network.AWS.S3.CreateMultipartUpload
-import           Network.AWS.S3.StreamingUpload
+import Network.AWS
+import Network.AWS.Data.Text                (fromText)
+import Network.AWS.S3.CreateMultipartUpload
+import Network.AWS.S3.StreamingUpload
 
-import           System.Environment
-import           System.IO                            (BufferMode(BlockBuffering),
-                                                       hSetBuffering, stdin)
-import Control.Monad.IO.Class                         (liftIO)
+import Control.Monad.IO.Class (liftIO)
+import System.Environment
+import System.IO              (BufferMode (BlockBuffering), hSetBuffering,
+                               stdin)
 
 #if !MIN_VERSION_base(4,8,0)
-import           Control.Applicative                  (pure, (<$>), (<*>))
+import Control.Applicative (pure, (<$>), (<*>))
 #endif
 
 main :: IO ()

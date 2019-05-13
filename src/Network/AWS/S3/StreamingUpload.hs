@@ -1,13 +1,13 @@
-{-# LANGUAGE BangPatterns          #-}
-{-# LANGUAGE CPP                   #-}
-{-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE ParallelListComp      #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE PatternGuards         #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ParallelListComp #-}
+{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 
 module Network.AWS.S3.StreamingUpload
 (
@@ -22,62 +22,53 @@ module Network.AWS.S3.StreamingUpload
     , minimumChunkSize
 ) where
 
-import           Network.AWS                            (AWS, HasEnv(..),
-                                                         LogLevel(..), MonadAWS,
-                                                         getFileSize,
-                                                         hashedBody, liftAWS,
-                                                         send,
-                                                         toBody, runAWS, runResourceT)
+import Network.AWS
+       ( AWS, HasEnv(..), LogLevel(..), MonadAWS, getFileSize, hashedBody, liftAWS, runAWS,
+       runResourceT, send, toBody )
 
-import           Network.AWS.Data.Crypto                (Digest, SHA256,
-                                                         hashFinalize, hashInit,
-                                                         hashUpdate)
+import Network.AWS.Data.Crypto ( Digest, SHA256, hashFinalize, hashInit, hashUpdate )
 
-import           Network.AWS.S3.AbortMultipartUpload
-import           Network.AWS.S3.CompleteMultipartUpload
-import           Network.AWS.S3.CreateMultipartUpload
-import           Network.AWS.S3.ListMultipartUploads
-import           Network.AWS.S3.Types                   (BucketName, cmuParts, completedMultipartUpload,
-                                                         completedPart, muKey,
-                                                         muUploadId)
-import           Network.AWS.S3.UploadPart
+import Network.AWS.S3.AbortMultipartUpload
+import Network.AWS.S3.CompleteMultipartUpload
+import Network.AWS.S3.CreateMultipartUpload
+import Network.AWS.S3.ListMultipartUploads
+import Network.AWS.S3.Types
+       ( BucketName, cmuParts, completedMultipartUpload, completedPart, muKey, muUploadId )
+import Network.AWS.S3.UploadPart
 
-import           Control.Applicative
-import           Control.Category                       ((>>>))
-import           Control.Exception.Base                 (SomeException, bracket_)
-import           Control.Monad                          (forM_, when, (>=>))
-import           Control.Monad.IO.Class                 (MonadIO, liftIO)
-import           Control.Monad.Morph                    (lift)
-import           Control.Monad.Reader.Class             (local)
+import Control.Applicative
+import Control.Category           ( (>>>) )
+import Control.Exception.Base     ( SomeException, bracket_ )
+import Control.Monad              ( forM_, when, (>=>) )
+import Control.Monad.IO.Class     ( MonadIO, liftIO )
+import Control.Monad.Morph        ( lift )
+import Control.Monad.Reader.Class ( local )
 
-import           Conduit                                (MonadUnliftIO(..))
-import           Data.Conduit                           (ConduitT, Void, await, catchC)
-import           Data.Conduit.List                      (sourceList)
+import Conduit           ( MonadUnliftIO(..) )
+import Data.Conduit      ( ConduitT, Void, await, catchC )
+import Data.Conduit.List ( sourceList )
 
-import           Data.ByteString                        (ByteString)
-import qualified Data.ByteString                        as BS
-import           Data.ByteString.Builder                (stringUtf8)
-import           System.IO.MMap                         (mmapFileByteString)
+import           Data.ByteString         ( ByteString )
+import qualified Data.ByteString         as BS
+import           Data.ByteString.Builder ( stringUtf8 )
+import           System.IO.MMap          ( mmapFileByteString )
 
-import           Control.DeepSeq                        (rnf)
-import qualified Data.DList                             as D
-import           Data.List                              (unfoldr)
-import           Data.List.NonEmpty                     (nonEmpty)
+import           Control.DeepSeq    ( rnf )
+import qualified Data.DList         as D
+import           Data.List          ( unfoldr )
+import           Data.List.NonEmpty ( nonEmpty )
 
-import           Control.Lens                           (set, view)
-import           Control.Lens.Operators
-import           Control.Monad.Catch                    (onException)
+import Control.Lens           ( set, view )
+import Control.Lens.Operators
+import Control.Monad.Catch    ( onException )
 
-import           Text.Printf                            (printf)
+import Text.Printf ( printf )
 
-import           Control.Concurrent                     (newQSem, signalQSem,
-                                                         waitQSem)
-import           Control.Concurrent.Async               (forConcurrently)
-import           System.Mem                             (performGC)
+import Control.Concurrent       ( newQSem, signalQSem, waitQSem )
+import Control.Concurrent.Async ( forConcurrently )
+import System.Mem               ( performGC )
 
-import           Network.HTTP.Client                    (defaultManagerSettings,
-                                                         managerConnCount,
-                                                         newManager)
+import Network.HTTP.Client ( defaultManagerSettings, managerConnCount, newManager )
 
 type ChunkSize = Int
 type NumThreads = Int
