@@ -1,26 +1,20 @@
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ParallelListComp #-}
-{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 
 module Network.AWS.S3.StreamingUpload
-(
-    streamUpload
-    , ChunkSize
-    , NumThreads
-    , UploadLocation(..)
-    , concurrentUpload
-    , abortAllUploads
-    , module Network.AWS.S3.CreateMultipartUpload
-    , module Network.AWS.S3.CompleteMultipartUpload
-    , minimumChunkSize
-) where
+  ( streamUpload
+  , ChunkSize
+  , minimumChunkSize
+  , NumThreads
+  , concurrentUpload
+  , UploadLocation(..)
+  , abortAllUploads
+  , module Network.AWS.S3.CreateMultipartUpload
+  , module Network.AWS.S3.CompleteMultipartUpload
+  ) where
 
 import Network.AWS
        ( AWS, HasEnv(..), LogLevel(..), MonadAWS, getFileSize, hashedBody, hashedFileRange,
@@ -38,7 +32,6 @@ import Network.AWS.S3.UploadPart
 
 import Control.Applicative
 import Control.Category           ( (>>>) )
-import Control.Exception.Base     ( SomeException, bracket_ )
 import Control.Monad              ( forM_, when, (>=>) )
 import Control.Monad.IO.Class     ( MonadIO, liftIO )
 import Control.Monad.Morph        ( lift )
@@ -52,19 +45,19 @@ import           Data.ByteString         ( ByteString )
 import qualified Data.ByteString         as BS
 import           Data.ByteString.Builder ( stringUtf8 )
 
-import           Control.DeepSeq    ( rnf )
 import qualified Data.DList         as D
 import           Data.List          ( unfoldr )
 import           Data.List.NonEmpty ( nonEmpty )
 
 import Control.Lens           ( set, view )
 import Control.Lens.Operators
-import Control.Monad.Catch    ( onException )
 
 import Text.Printf ( printf )
 
 import Control.Concurrent       ( newQSem, signalQSem, waitQSem )
 import Control.Concurrent.Async ( forConcurrently )
+import Control.Exception.Base   ( SomeException, bracket_ )
+import Control.Monad.Catch      ( onException )
 import System.Mem               ( performGC )
 
 import Network.HTTP.Client ( defaultManagerSettings, managerConnCount, newManager )
@@ -79,11 +72,11 @@ minimumChunkSize = 6*1024*1024 -- Making this 5MB+1 seemed to cause AWS to compl
 
 {- |
 Given a 'CreateMultipartUpload', creates a 'Sink' which will sequentially
-upload the data streamed in in chunks of at least 'chunkSize' and return
-the 'CompleteMultipartUploadResponse'.
+upload the data streamed in in chunks of at least 'minimumChunkSize' and return either
+the 'CompleteMultipartUploadResponse', or if an exception is thrown,
+`AbortMultipartUploadResponse` and the exception as `SomeException`. If aborting
+the upload also fails then the exception caused by the call to abort will be thrown.
 
-If uploading of any parts fails, an attempt is made to abort the Multipart
-upload, but it is likely that if an upload fails this abort may also fail.
 'Network.AWS.S3.ListMultipartUploads' can be used to list any pending
 uploads - it is important to abort multipart uploads because you will
 be charged for storage of the parts until it is completed or aborted.
@@ -101,29 +94,27 @@ streamUpload mChunkSize multiPartUploadDesc = do
       logStr = liftIO . logger Debug . stringUtf8
       chunkSize = maybe minimumChunkSize (max minimumChunkSize) mChunkSize
 
-  cmur <- lift $ send multiPartUploadDesc
-  when (cmur ^. cmursResponseStatus /= 200) $
+  multiPartUpload <- lift $ send multiPartUploadDesc
+  when (multiPartUpload ^. cmursResponseStatus /= 200) $
     fail "Failed to create upload"
 
   logStr "\n**** Created upload\n"
 
-  let Just upId = cmur ^. cmursUploadId
+  let Just upId = multiPartUpload ^. cmursUploadId
       bucket    = multiPartUploadDesc  ^. cmuBucket
       key       = multiPartUploadDesc  ^. cmuKey
       -- go :: DList ByteString -> Int -> Context SHA256 -> Int -> DList (Maybe CompletedPart) -> Sink ByteString m ()
-      go !bss !bufsize !ctx !partnum !completed = Data.Conduit.await >>= \mbs -> case mbs of
+      go !bss !bufsize !ctx !partnum !completed = await >>= \case
         Just bs
             | l <- BS.length bs, bufsize + l <= chunkSize
-            -> go (D.snoc bss bs) (bufsize + l) (hashUpdate ctx bs) partnum completed
-
+                -> go (D.snoc bss bs) (bufsize + l) (hashUpdate ctx bs) partnum completed
             | otherwise -> do
                 rs <- lift $ performUpload partnum (bufsize + BS.length bs)
                                             (hashFinalize $ hashUpdate ctx bs)
                                             (D.snoc bss bs)
 
                 logStr $ printf "\n**** Uploaded part %d size %d\n" partnum bufsize
-                let part = completedPart partnum <$> (rs ^. uprsETag)
-                    !_ = rnf part
+                let !part = completedPart partnum <$> (rs ^. uprsETag)
                 liftIO performGC
                 go empty 0 hashInit (partnum+1) . D.snoc completed $! part
 
@@ -167,10 +158,6 @@ data UploadLocation
     = FP FilePath -- ^ A file to be uploaded
     | BS ByteString -- ^ A strict 'ByteString'
 
- --  IO (Int -> IO (Maybe ByteString)) (Either (IO ()) (IO ()))
-        -- part number as input, may be called many times until Nothing is returned,
-        -- and a function to close either this part or all parts
-
 {-|
 Allows a file or 'ByteString' to be uploaded concurrently, using the
 async library.  The chunk size may optionally be specified, but will be at least
@@ -193,62 +180,65 @@ concurrentUpload :: (MonadAWS m)
                  -> CreateMultipartUpload -- ^ Description of where to upload.
                  -> m CompleteMultipartUploadResponse
 concurrentUpload mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
-    cmur <- send multiPartUploadDesc
-    when (cmur ^. cmursResponseStatus /= 200) $
-        fail "Failed to create upload"
-    env <- liftAWS $ view environment
-    let logger = env ^. envLogger
-        logStr :: MonadIO m => String -> m ()
-        logStr = liftIO . logger Info . stringUtf8
-    let Just upId = cmur ^. cmursUploadId
-        bucket    = multiPartUploadDesc  ^. cmuBucket
-        key       = multiPartUploadDesc  ^. cmuKey
+  env <- liftAWS $ view environment
+  cmur <- send multiPartUploadDesc
+  when (cmur ^. cmursResponseStatus /= 200) $
+      fail "Failed to create upload"
 
-        calcChunkSize :: Int -> Int
-        calcChunkSize len =
-            let chunkSize' = maybe minimumChunkSize (max minimumChunkSize) mChunkSize
-            in if len `div` chunkSize' >= 10000 then len `div` 9999 else chunkSize'
+  let logStr :: MonadIO m => String -> m ()
+      logStr    = liftIO . (env ^. envLogger) Info . stringUtf8
+      bucket    = multiPartUploadDesc  ^. cmuBucket
+      key       = multiPartUploadDesc  ^. cmuKey
+      Just upId = cmur ^. cmursUploadId
 
-    let mConnCount = managerConnCount defaultManagerSettings
-        nThreads   = maybe mConnCount (max 1) mNumThreads
-        exec :: MonadAWS m => AWS a -> m a
-        exec run = if maybe False (> mConnCount) mNumThreads
-                then do
-                    mgr' <- liftIO $ newManager  defaultManagerSettings{managerConnCount = nThreads}
-                    liftAWS $ local (envManager .~ mgr') run
-                else liftAWS run
-    exec $ flip onException (send (abortMultipartUpload bucket key upId)) $ do
-        sem <- liftIO $ newQSem nThreads
-        uploadResponses <- case uploadLoc of
-            BS bytes ->
-                let chunkSize = calcChunkSize $ BS.length bytes
-                in liftIO $ forConcurrently (zip [1..] $ chunksOf chunkSize bytes) $ \(partnum, b) ->
-                    bracket_ (waitQSem sem) (signalQSem sem) $ do
-                      logStr $ "Starting part: " ++ show partnum
-                      umr <- runResourceT $ runAWS env $ send . uploadPart bucket key partnum upId . toBody $ b
-                      logStr $ "Finished part: " ++ show partnum
-                      pure $ completedPart partnum <$> (umr ^. uprsETag)
+      calculateChunkSize :: Int -> Int
+      calculateChunkSize len =
+          let chunkSize' = maybe minimumChunkSize (max minimumChunkSize) mChunkSize
+          in if len `div` chunkSize' >= 10000 then len `div` 9999 else chunkSize'
 
-            FP filePath -> do
-                fsize <- liftIO $ getFileSize filePath
-                let chunkSize = calcChunkSize $ fromIntegral fsize
-                    (count,lst) = divMod (fromIntegral fsize) chunkSize
-                    params = [(partnum, chunkSize*offset, size)
-                             | partnum <- [1..]
-                             | offset  <- [0..count]
-                             | size    <- (chunkSize <$ [0..count-1]) ++ [lst]
-                             ]
+      mConnCount = managerConnCount defaultManagerSettings
+      nThreads   = maybe mConnCount (max 1) mNumThreads
 
-                liftIO $ forConcurrently params $ \(partnum,off,size) ->
-                  bracket_ (waitQSem sem) (signalQSem sem) $  do
-                    chunkStream <- hashedFileRange filePath (fromIntegral off) (fromIntegral size)
-                    uploadResp <- runResourceT $ runAWS env $
-                      send . uploadPart bucket key partnum upId . toBody $ chunkStream
-                    pure $ completedPart partnum <$> (uploadResp ^. uprsETag)
+      exec :: MonadAWS m => AWS a -> m a
+      exec act = if maybe False (> mConnCount) mNumThreads
+              then do
+                  mgr' <- liftIO $ newManager  defaultManagerSettings{managerConnCount = nThreads}
+                  liftAWS $ local (envManager .~ mgr') act
+              else liftAWS act
+  exec $ flip onException (send (abortMultipartUpload bucket key upId)) $ do
+      sem <- liftIO $ newQSem nThreads
+      uploadResponses <- case uploadLoc of
+          BS bytes ->
+            let chunkSize = calculateChunkSize $ BS.length bytes
+            in liftIO $ forConcurrently (zip [1..] $ chunksOf chunkSize bytes) $ \(partnum, chunk) ->
+                bracket_ (waitQSem sem) (signalQSem sem) $ do
+                  logStr $ "Starting part: " ++ show partnum
+                  umr <- runResourceT $ runAWS env $ send . uploadPart bucket key partnum upId . toBody $ chunk
+                  logStr $ "Finished part: " ++ show partnum
+                  pure $ completedPart partnum <$> (umr ^. uprsETag)
 
-        let prts = nonEmpty =<< sequence uploadResponses
-        send $ completeMultipartUpload bucket key upId
-                & cMultipartUpload ?~ set cmuParts prts completedMultipartUpload
+          FP filePath -> do
+            fsize <- liftIO $ getFileSize filePath
+            let chunkSize = calculateChunkSize $ fromIntegral fsize
+                (count,lst) = fromIntegral fsize `divMod` chunkSize
+                params = [(partnum, chunkSize*offset, size)
+                          | partnum <- [1..]
+                          | offset  <- [0..count]
+                          | size    <- (chunkSize <$ [0..count-1]) ++ [lst]
+                          ]
+
+            liftIO $ forConcurrently params $ \(partnum,off,size) ->
+              bracket_ (waitQSem sem) (signalQSem sem) $ do
+                logStr $ "Starting file part: " ++ show partnum
+                chunkStream <- hashedFileRange filePath (fromIntegral off) (fromIntegral size)
+                uploadResp <- runResourceT $ runAWS env $
+                  send . uploadPart bucket key partnum upId . toBody $ chunkStream
+                logStr $ "Finished file part: " ++ show partnum
+                pure $ completedPart partnum <$> (uploadResp ^. uprsETag)
+
+      let parts = nonEmpty =<< sequence uploadResponses
+      send $ completeMultipartUpload bucket key upId
+              & cMultipartUpload ?~ set cmuParts parts completedMultipartUpload
 
 -- | Aborts all uploads in a given bucket - useful for cleaning up.
 abortAllUploads :: (MonadAWS m) => BucketName -> m ()

@@ -37,7 +37,7 @@ main = do
                   "-" -> runConduit (sourceHandle stdin .| streamUpload Nothing (createMultipartUpload buck ky))
                           >>= liftIO . either print print
                   _   -> concurrentUpload Nothing Nothing (FP file) (createMultipartUpload buck ky)
-                        >>= liftIO . print
+                          >>= liftIO . print
 
           print res
         Left err -> print err >> usage
