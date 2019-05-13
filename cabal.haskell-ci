@@ -71,7 +71,7 @@ allow-failures: False
 last-in-series: False
 
 -- Jobs to additionally build with OSX
-osx: 8.4, 8.6
+osx: 8.2.2 8.4.4 8.6.4
 
 -- Additional apt packages to install
 apt:
