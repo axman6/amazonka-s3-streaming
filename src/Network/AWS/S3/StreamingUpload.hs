@@ -23,8 +23,8 @@ module Network.AWS.S3.StreamingUpload
 ) where
 
 import Network.AWS
-       ( AWS, HasEnv(..), LogLevel(..), MonadAWS, getFileSize, hashedBody, liftAWS, runAWS,
-       runResourceT, send, toBody )
+       ( AWS, HasEnv(..), LogLevel(..), MonadAWS, getFileSize, hashedBody, hashedFileRange,
+       liftAWS, runAWS, runResourceT, send, toBody )
 
 import Network.AWS.Data.Crypto ( Digest, SHA256, hashFinalize, hashInit, hashUpdate )
 
@@ -51,7 +51,6 @@ import Data.Conduit.List ( sourceList )
 import           Data.ByteString         ( ByteString )
 import qualified Data.ByteString         as BS
 import           Data.ByteString.Builder ( stringUtf8 )
-import           System.IO.MMap          ( mmapFileByteString )
 
 import           Control.DeepSeq    ( rnf )
 import qualified Data.DList         as D
@@ -220,18 +219,18 @@ concurrentUpload mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
                 else liftAWS run
     exec $ flip onException (send (abortMultipartUpload bucket key upId)) $ do
         sem <- liftIO $ newQSem nThreads
-        umrs <- case uploadLoc of
-            BS bs ->
-                let chunkSize = calcChunkSize $ BS.length bs
-                in liftIO $ forConcurrently (zip [1..] $ chunksOf chunkSize bs) $ \(partnum, b) ->
+        uploadResponses <- case uploadLoc of
+            BS bytes ->
+                let chunkSize = calcChunkSize $ BS.length bytes
+                in liftIO $ forConcurrently (zip [1..] $ chunksOf chunkSize bytes) $ \(partnum, b) ->
                     bracket_ (waitQSem sem) (signalQSem sem) $ do
                       logStr $ "Starting part: " ++ show partnum
                       umr <- runResourceT $ runAWS env $ send . uploadPart bucket key partnum upId . toBody $ b
                       logStr $ "Finished part: " ++ show partnum
                       pure $ completedPart partnum <$> (umr ^. uprsETag)
 
-            FP fp -> do
-                fsize <- liftIO $ getFileSize fp
+            FP filePath -> do
+                fsize <- liftIO $ getFileSize filePath
                 let chunkSize = calcChunkSize $ fromIntegral fsize
                     (count,lst) = divMod (fromIntegral fsize) chunkSize
                     params = [(partnum, chunkSize*offset, size)
@@ -242,11 +241,12 @@ concurrentUpload mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
 
                 liftIO $ forConcurrently params $ \(partnum,off,size) ->
                   bracket_ (waitQSem sem) (signalQSem sem) $  do
-                    b <- mmapFileByteString fp (Just (fromIntegral off,size))
-                    umr <- runResourceT $ runAWS env $ send . uploadPart bucket key partnum upId . toBody $ b
-                    pure $ completedPart partnum <$> (umr ^. uprsETag)
+                    chunkStream <- hashedFileRange filePath (fromIntegral off) (fromIntegral size)
+                    uploadResp <- runResourceT $ runAWS env $
+                      send . uploadPart bucket key partnum upId . toBody $ chunkStream
+                    pure $ completedPart partnum <$> (uploadResp ^. uprsETag)
 
-        let prts = nonEmpty =<< sequence umrs
+        let prts = nonEmpty =<< sequence uploadResponses
         send $ completeMultipartUpload bucket key upId
                 & cMultipartUpload ?~ set cmuParts prts completedMultipartUpload
 
