@@ -1,24 +1,23 @@
-{-# LANGUAGE CPP               #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
 
-import Data.Conduit        (runConduit, (.|))
-import Data.Conduit.Binary (sourceHandle)
-import Data.Text           (pack)
+import Data.Conduit        ( runConduit, (.|) )
+import Data.Conduit.Binary ( sourceHandle )
+import Data.Text           ( pack )
 
 import Network.AWS
-import Network.AWS.Data.Text                (fromText)
+import Network.AWS.Data.Text                ( fromText )
 import Network.AWS.S3.CreateMultipartUpload
 import Network.AWS.S3.StreamingUpload
 
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class ( liftIO )
 import System.Environment
-import System.IO              (BufferMode (BlockBuffering), hSetBuffering,
-                               stdin)
+import System.IO              ( BufferMode(BlockBuffering), hSetBuffering, stdin )
 
 #if !MIN_VERSION_base(4,8,0)
-import Control.Applicative (pure, (<$>), (<*>))
+import Control.Applicative ( pure, (<$>), (<*>) )
 #endif
 
 main :: IO ()
@@ -32,11 +31,7 @@ main = do
                  <*> fromText (pack key)
       of
         Right (creds,_reg,buck,ky) -> do
-#if !MIN_VERSION_amazonka(1,4,4)
-          env <- newEnv _reg creds
-#else
           env <- newEnv creds
-#endif
           hSetBuffering stdin (BlockBuffering Nothing)
           res <- runResourceT . runAWS env $ case file of
                   "-" -> runConduit (sourceHandle stdin .| streamUpload Nothing (createMultipartUpload buck ky))
@@ -52,11 +47,7 @@ main = do
                 <*> fromText (pack bucket)
       of
         Right (creds,_reg,buck) -> do
-#if !MIN_VERSION_amazonka(1,4,4)
-          env <- newEnv _reg creds
-#else
           env <- newEnv creds
-#endif
           res <- runResourceT . runAWS env . abortAllUploads $ buck
           print res
         Left err -> print err >> usage
