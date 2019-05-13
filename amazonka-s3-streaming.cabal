@@ -14,7 +14,7 @@ category:            Network, AWS, Cloud, Distributed Computing
 build-type:          Simple
 extra-source-files:  README.md, Changelog.md
 cabal-version:       >=1.10
--- tested-with:         GHC == 7.8.4, GHC == 7.10.2, GHC == 8.0.2, GHC == 8.2.2, GHC == 8.4.*
+tested-with:         GHC == 8.0.* || == 8.2.* || == 8.4.* || == 8.6.*
 
 library
   hs-source-dirs:      src
