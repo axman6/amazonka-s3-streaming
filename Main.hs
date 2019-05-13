@@ -3,7 +3,7 @@
 module Main where
 
 
-import           Data.Conduit                         (($$))
+import           Data.Conduit                         ((.|), runConduit)
 import           Data.Conduit.Binary                  (sourceHandle)
 import           Data.Text                            (pack)
 
@@ -15,6 +15,7 @@ import           Network.AWS.S3.StreamingUpload
 import           System.Environment
 import           System.IO                            (BufferMode(BlockBuffering),
                                                        hSetBuffering, stdin)
+import Control.Monad.IO.Class                         (liftIO)
 
 #if !MIN_VERSION_base(4,8,0)
 import           Control.Applicative                  (pure, (<$>), (<*>))
@@ -38,10 +39,11 @@ main = do
 #endif
           hSetBuffering stdin (BlockBuffering Nothing)
           res <- runResourceT . runAWS env $ case file of
-                  -- Stream data from stdin
-                  "-" -> sourceHandle stdin $$ streamUpload Nothing (createMultipartUpload buck ky)
-                  -- Read from a file
-                  _   -> concurrentUpload Nothing Nothing (FP file) $ createMultipartUpload buck ky
+                  "-" -> runConduit (sourceHandle stdin .| streamUpload Nothing (createMultipartUpload buck ky))
+                          >>= liftIO . either print print
+                  _   -> concurrentUpload Nothing Nothing (FP file) (createMultipartUpload buck ky)
+                        >>= liftIO . print
+
           print res
         Left err -> print err >> usage
     ("abort":region:profile:credfile:bucket:_) ->

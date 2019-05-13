@@ -27,7 +27,7 @@ import           Network.AWS                            (AWS, HasEnv(..),
                                                          getFileSize,
                                                          hashedBody, liftAWS,
                                                          send,
-                                                         toBody)
+                                                         toBody, runAWS, runResourceT)
 
 import           Network.AWS.Data.Crypto                (Digest, SHA256,
                                                          hashFinalize, hashInit,
@@ -44,15 +44,14 @@ import           Network.AWS.S3.UploadPart
 
 import           Control.Applicative
 import           Control.Category                       ((>>>))
-import           Control.Exception.Base                 (SomeException)
-import           Control.Monad                          (forM_, forM, when, (>=>))
+import           Control.Exception.Base                 (SomeException, bracket_)
+import           Control.Monad                          (forM_, when, (>=>))
 import           Control.Monad.IO.Class                 (MonadIO, liftIO)
 import           Control.Monad.Morph                    (lift)
 import           Control.Monad.Reader.Class             (local)
--- import           Control.Monad.Trans.Resource           (MonadResource)
 
 import           Conduit                                (MonadUnliftIO(..))
-import           Data.Conduit                           (ConduitT, await, catchC)
+import           Data.Conduit                           (ConduitT, Void, await, catchC)
 import           Data.Conduit.List                      (sourceList)
 
 import           Data.ByteString                        (ByteString)
@@ -73,7 +72,7 @@ import           Text.Printf                            (printf)
 
 import           Control.Concurrent                     (newQSem, signalQSem,
                                                          waitQSem)
--- import           Control.Concurrent.Async.Lifted        (forConcurrently)
+import           Control.Concurrent.Async               (forConcurrently)
 import           System.Mem                             (performGC)
 
 import           Network.HTTP.Client                    (defaultManagerSettings,
@@ -105,7 +104,7 @@ May throw 'Network.AWS.Error'
 streamUpload :: (MonadUnliftIO m, MonadAWS m)
              => Maybe ChunkSize -- ^ Optional chunk size
              -> CreateMultipartUpload -- ^ Upload location
-             -> ConduitT ByteString () m (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
+             -> ConduitT ByteString Void m (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
 streamUpload mChunkSize multiPartUploadDesc = do
   logger <- lift $ liftAWS $ view envLogger
   let logStr :: MonadIO m => String -> m ()
@@ -121,32 +120,28 @@ streamUpload mChunkSize multiPartUploadDesc = do
   let Just upId = cmur ^. cmursUploadId
       bucket    = multiPartUploadDesc  ^. cmuBucket
       key       = multiPartUploadDesc  ^. cmuKey
-      -- go :: Text -> Builder -> Int -> Int -> Sink ByteString m ()
+      -- go :: DList ByteString -> Int -> Context SHA256 -> Int -> DList (Maybe CompletedPart) -> Sink ByteString m ()
       go !bss !bufsize !ctx !partnum !completed = Data.Conduit.await >>= \mbs -> case mbs of
         Just bs
             | l <- BS.length bs, bufsize + l <= chunkSize
             -> go (D.snoc bss bs) (bufsize + l) (hashUpdate ctx bs) partnum completed
 
             | otherwise -> do
-                rs <- lift $ partUploader partnum (bufsize + BS.length bs)
+                rs <- lift $ performUpload partnum (bufsize + BS.length bs)
                                             (hashFinalize $ hashUpdate ctx bs)
                                             (D.snoc bss bs)
 
                 logStr $ printf "\n**** Uploaded part %d size %d\n" partnum bufsize
                 let part = completedPart partnum <$> (rs ^. uprsETag)
-#if MIN_VERSION_amazonka_s3(1,4,1)
                     !_ = rnf part
-#endif
                 liftIO performGC
                 go empty 0 hashInit (partnum+1) . D.snoc completed $! part
 
         Nothing -> lift $ do
             prts <- if bufsize > 0
                 then do
-                    rs <- partUploader partnum bufsize (hashFinalize ctx) bss
-
+                    rs <- performUpload partnum bufsize (hashFinalize ctx) bss
                     logStr $ printf "\n**** Uploaded (final) part %d size %d\n" partnum bufsize
-
                     let allParts = D.toList $ D.snoc completed $ completedPart partnum <$> (rs ^. uprsETag)
                     pure $ nonEmpty =<< sequence allParts
                 else do
@@ -157,8 +152,8 @@ streamUpload mChunkSize multiPartUploadDesc = do
                     & cMultipartUpload ?~ set cmuParts prts completedMultipartUpload
 
 
-      partUploader :: MonadAWS m => Int -> Int -> Digest SHA256 -> D.DList ByteString -> m UploadPartResponse
-      partUploader pnum size digest =
+      performUpload :: MonadAWS m => Int -> Int -> Digest SHA256 -> D.DList ByteString -> m UploadPartResponse
+      performUpload pnum size digest =
         D.toList
         >>> sourceList
         >>> hashedBody digest (fromIntegral size)
@@ -174,7 +169,7 @@ streamUpload mChunkSize multiPartUploadDesc = do
 
   (Right <$> go D.empty 0 hashInit 1 D.empty) `catchC` \(except :: SomeException) ->
     Left . (,except) <$> lift (send (abortMultipartUpload bucket key upId))
-      -- Whatever happens, we abort the upload and rethrow
+      -- Whatever happens, we abort the upload and return the exception
 
 
 -- | Specifies whether to upload a file or 'ByteString
@@ -211,8 +206,9 @@ concurrentUpload mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
     cmur <- send multiPartUploadDesc
     when (cmur ^. cmursResponseStatus /= 200) $
         fail "Failed to create upload"
-    logger <- liftAWS $ view envLogger
-    let logStr :: MonadIO m => String -> m ()
+    env <- liftAWS $ view environment
+    let logger = env ^. envLogger
+        logStr :: MonadIO m => String -> m ()
         logStr = liftIO . logger Info . stringUtf8
     let Just upId = cmur ^. cmursUploadId
         bucket    = multiPartUploadDesc  ^. cmuBucket
@@ -236,14 +232,12 @@ concurrentUpload mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
         umrs <- case uploadLoc of
             BS bs ->
                 let chunkSize = calcChunkSize $ BS.length bs
-                -- in forConcurrently (zip [1..] $ chunksOf chunkSize bs) $ \(partnum, b) -> do
-                in forM (zip [1..] $ chunksOf chunkSize bs) $ \(partnum, b) -> do
-                    liftIO $ waitQSem sem
-                    logStr $ "Starting part: " ++ show partnum
-                    umr <- send . uploadPart bucket key partnum upId . toBody $ b
-                    logStr $ "Finished part: " ++ show partnum
-                    liftIO $ signalQSem sem
-                    pure $ completedPart partnum <$> (umr ^. uprsETag)
+                in liftIO $ forConcurrently (zip [1..] $ chunksOf chunkSize bs) $ \(partnum, b) ->
+                    bracket_ (waitQSem sem) (signalQSem sem) $ do
+                      logStr $ "Starting part: " ++ show partnum
+                      umr <- runResourceT $ runAWS env $ send . uploadPart bucket key partnum upId . toBody $ b
+                      logStr $ "Finished part: " ++ show partnum
+                      pure $ completedPart partnum <$> (umr ^. uprsETag)
 
             FP fp -> do
                 fsize <- liftIO $ getFileSize fp
@@ -255,12 +249,10 @@ concurrentUpload mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
                              | size    <- (chunkSize <$ [0..count-1]) ++ [lst]
                              ]
 
-                -- forConcurrently params $ \(partnum,off,size) -> do
-                forM params $ \(partnum,off,size) -> do
-                    liftIO $ waitQSem sem
-                    b <- liftIO $ mmapFileByteString fp (Just (fromIntegral off,size))
-                    umr <- send . uploadPart bucket key partnum upId . toBody $ b
-                    liftIO $ signalQSem sem
+                liftIO $ forConcurrently params $ \(partnum,off,size) ->
+                  bracket_ (waitQSem sem) (signalQSem sem) $  do
+                    b <- mmapFileByteString fp (Just (fromIntegral off,size))
+                    umr <- runResourceT $ runAWS env $ send . uploadPart bucket key partnum upId . toBody $ b
                     pure $ completedPart partnum <$> (umr ^. uprsETag)
 
         let prts = nonEmpty =<< sequence umrs
