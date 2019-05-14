@@ -1,5 +1,8 @@
 # Changelog - amazonka-s3-streaming
 
+## 1.0.0.0
+ - Update to support conduit >= 1.3 only.
+
 ## 0.2.0.5
 - Fix compatibility with 
 
