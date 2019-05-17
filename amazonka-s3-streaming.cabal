@@ -1,5 +1,5 @@
 name:                amazonka-s3-streaming
-version:             1.0.0.1
+version:             1.0.0.2
 synopsis:            Provides conduits to upload data to S3 using the Multipart API
 description:         Provides a conduit based streaming interface and a concurrent interface to
                      uploading data to S3 using the Multipart API. Also provides method to upload
@@ -32,7 +32,7 @@ library
                        , exceptions       >= 0.8.2.1    && < 0.11
                        , dlist            >= 0.8        && < 0.9
                        , async            >= 2          && < 2.3
-                       , http-client      >= 0.4        && < 0.6
+                       , http-client      >= 0.4        && < 0.7
 
 flag s3upload-exe
   Description: Whether to build the s3upload executable for uploading files using this library.
