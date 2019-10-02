@@ -14,13 +14,13 @@ category:            Network, AWS, Cloud, Distributed Computing
 build-type:          Simple
 extra-source-files:  README.md, Changelog.md
 cabal-version:       >=1.10
-tested-with:         GHC == 8.0.* || == 8.2.2 || == 8.4.* || == 8.6.*
+tested-with:         GHC == 8.0.* || == 8.2.2 || == 8.4.* || == 8.6.* || == 8.8.*
 
 library
   hs-source-dirs:      src
   exposed-modules:     Network.AWS.S3.StreamingUpload
   default-language:    Haskell2010
-  build-depends:       base >= 4.6 && < 5
+  build-depends:       base >= 4.9 && < 5
                        , amazonka         >= 1.6        && < 1.7
                        , amazonka-core    >= 1.6        && < 1.7
                        , amazonka-s3      >= 1.6        && < 1.7

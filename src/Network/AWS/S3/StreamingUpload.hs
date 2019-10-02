@@ -33,6 +33,7 @@ import Network.AWS.S3.UploadPart
 import Control.Applicative
 import Control.Category           ( (>>>) )
 import Control.Monad              ( forM_, when, (>=>) )
+import Control.Monad.Fail         ( MonadFail )
 import Control.Monad.IO.Class     ( MonadIO, liftIO )
 import Control.Monad.Morph        ( lift )
 import Control.Monad.Reader.Class ( local )
@@ -84,7 +85,7 @@ See the AWS documentation for more details.
 
 May throw 'Network.AWS.Error'
 -}
-streamUpload :: (MonadUnliftIO m, MonadAWS m)
+streamUpload :: (MonadUnliftIO m, MonadAWS m, MonadFail m)
              => Maybe ChunkSize -- ^ Optional chunk size
              -> CreateMultipartUpload -- ^ Upload location
              -> ConduitT ByteString Void m (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
@@ -133,7 +134,7 @@ streamUpload mChunkSize multiPartUploadDesc = do
                     & cMultipartUpload ?~ set cmuParts prts completedMultipartUpload
 
 
-      performUpload :: MonadAWS m => Int -> Int -> Digest SHA256 -> D.DList ByteString -> m UploadPartResponse
+      performUpload :: (MonadAWS m, MonadFail m) => Int -> Int -> Digest SHA256 -> D.DList ByteString -> m UploadPartResponse
       performUpload pnum size digest =
         D.toList
         >>> sourceList
@@ -143,7 +144,7 @@ streamUpload mChunkSize multiPartUploadDesc = do
         >>> send
         >=> checkUpload
 
-      checkUpload :: (Monad m) => UploadPartResponse -> m UploadPartResponse
+      checkUpload :: (Monad m, MonadFail m) => UploadPartResponse -> m UploadPartResponse
       checkUpload upr = do
         when (upr ^. uprsResponseStatus /= 200) $ fail "Failed to upload piece"
         return upr
@@ -173,7 +174,7 @@ May throw `Network.AWS.Error`, or `IOError`; an attempt is made to cancel the
 multipart upload on any error, but this may also fail if, for example, the network
 connection has been broken. See `abortAllUploads` for a crude cleanup method.
 -}
-concurrentUpload :: (MonadAWS m)
+concurrentUpload :: (MonadAWS m, MonadFail m)
                  => Maybe ChunkSize -- ^ Optional chunk size
                  -> Maybe NumThreads -- ^ Optional number of threads to upload with
                  -> UploadLocation -- ^ Whether to upload a file on disk or a `ByteString` that's already in memory.
