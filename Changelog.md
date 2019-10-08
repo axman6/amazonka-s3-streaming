@@ -1,5 +1,8 @@
 # Changelog - amazonka-s3-streaming
 
+## 1.1.0.0
+ - Adds MonadFail constraints, thanks @utdemir
+
 ## 1.0.0.2
  - allow http-client 0.6
 
@@ -7,7 +10,7 @@
  - Update to support conduit >= 1.3 only.
 
 ## 0.2.0.5
-- Fix compatibility with 
+- Fix compatibility with
 
 ## 0.2.0.4
 - Make building s3upload executable optional
