@@ -17,9 +17,10 @@ module Network.AWS.S3.StreamingUpload
   ) where
 
 import Network.AWS
-       ( AWS, HasEnv(..), LogLevel(..), MonadAWS, getFileSize, hashedBody, hashedFileRange,
-       liftAWS, runAWS, runResourceT, send, toBody )
+       ( HasEnv(..), LogLevel(..), getFileSize, hashedBody, hashedFileRange, runAWS, runResourceT,
+       toBody )
 
+import Control.Monad.Trans.AWS ( AWSConstraint, send )
 import Network.AWS.Data.Crypto ( Digest, SHA256, hashFinalize, hashInit, hashUpdate )
 
 import Network.AWS.S3.AbortMultipartUpload
@@ -85,12 +86,12 @@ See the AWS documentation for more details.
 
 May throw 'Network.AWS.Error'
 -}
-streamUpload :: (MonadUnliftIO m, MonadAWS m, MonadFail m)
+streamUpload :: (MonadUnliftIO m, AWSConstraint r m, MonadFail m)
              => Maybe ChunkSize -- ^ Optional chunk size
              -> CreateMultipartUpload -- ^ Upload location
              -> ConduitT ByteString Void m (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
 streamUpload mChunkSize multiPartUploadDesc = do
-  logger <- lift $ liftAWS $ view envLogger
+  logger <- lift $ view envLogger
   let logStr :: MonadIO m => String -> m ()
       logStr = liftIO . logger Debug . stringUtf8
       chunkSize = maybe minimumChunkSize (max minimumChunkSize) mChunkSize
@@ -134,7 +135,7 @@ streamUpload mChunkSize multiPartUploadDesc = do
                     & cMultipartUpload ?~ set cmuParts prts completedMultipartUpload
 
 
-      performUpload :: (MonadAWS m, MonadFail m) => Int -> Int -> Digest SHA256 -> D.DList ByteString -> m UploadPartResponse
+      performUpload :: (AWSConstraint r m, MonadFail m) => Int -> Int -> Digest SHA256 -> D.DList ByteString -> m UploadPartResponse
       performUpload pnum size digest =
         D.toList
         >>> sourceList
@@ -174,14 +175,14 @@ May throw `Network.AWS.Error`, or `IOError`; an attempt is made to cancel the
 multipart upload on any error, but this may also fail if, for example, the network
 connection has been broken. See `abortAllUploads` for a crude cleanup method.
 -}
-concurrentUpload :: (MonadAWS m, MonadFail m)
+concurrentUpload :: (AWSConstraint r m, MonadFail m)
                  => Maybe ChunkSize -- ^ Optional chunk size
                  -> Maybe NumThreads -- ^ Optional number of threads to upload with
                  -> UploadLocation -- ^ Whether to upload a file on disk or a `ByteString` that's already in memory.
                  -> CreateMultipartUpload -- ^ Description of where to upload.
                  -> m CompleteMultipartUploadResponse
 concurrentUpload mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
-  env <- liftAWS $ view environment
+  env <- view environment
   cmur <- send multiPartUploadDesc
   when (cmur ^. cmursResponseStatus /= 200) $
       fail "Failed to create upload"
@@ -200,12 +201,12 @@ concurrentUpload mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
       mConnCount = managerConnCount defaultManagerSettings
       nThreads   = maybe mConnCount (max 1) mNumThreads
 
-      exec :: MonadAWS m => AWS a -> m a
+      exec :: AWSConstraint r m => m a -> m a
       exec act = if maybe False (> mConnCount) mNumThreads
               then do
                   mgr' <- liftIO $ newManager  defaultManagerSettings{managerConnCount = nThreads}
-                  liftAWS $ local (envManager .~ mgr') act
-              else liftAWS act
+                  local (envManager .~ mgr') act
+              else act
   exec $ flip onException (send (abortMultipartUpload bucket key upId)) $ do
       sem <- liftIO $ newQSem nThreads
       uploadResponses <- case uploadLoc of
@@ -242,7 +243,7 @@ concurrentUpload mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
               & cMultipartUpload ?~ set cmuParts parts completedMultipartUpload
 
 -- | Aborts all uploads in a given bucket - useful for cleaning up.
-abortAllUploads :: (MonadAWS m) => BucketName -> m ()
+abortAllUploads :: (AWSConstraint r m) => BucketName -> m ()
 abortAllUploads bucket = do
   rs <- send (listMultipartUploads bucket)
   forM_ (rs ^. lmursUploads) $ \mu -> do
