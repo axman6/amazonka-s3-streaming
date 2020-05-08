@@ -6,7 +6,8 @@ module Main where
 import Data.Conduit        ( runConduit, (.|) )
 import Data.Conduit.Binary ( sourceHandle )
 import Data.Text           ( pack )
-
+import Data.Functor        ( (<&>) )
+import Control.Lens        ( set )
 import Network.AWS
 import Network.AWS.Data.Text                ( fromText )
 import Network.AWS.S3.CreateMultipartUpload
@@ -30,8 +31,8 @@ main = do
                  <*> fromText (pack bucket)
                  <*> fromText (pack key)
       of
-        Right (creds,_reg,buck,ky) -> do
-          env <- newEnv creds
+        Right (creds,reg,buck,ky) -> do
+          env <- newEnv creds <&> set envRegion reg
           hSetBuffering stdin (BlockBuffering Nothing)
           res <- runResourceT . runAWS env $ case file of
                   "-" -> runConduit (sourceHandle stdin .| streamUpload Nothing (createMultipartUpload buck ky))
@@ -46,8 +47,8 @@ main = do
                 <*> (fromText (pack region) :: Either String Region)
                 <*> fromText (pack bucket)
       of
-        Right (creds,_reg,buck) -> do
-          env <- newEnv creds
+        Right (creds,reg,buck) -> do
+          env <- newEnv creds <&> set envRegion reg
           res <- runResourceT . runAWS env . abortAllUploads $ buck
           print res
         Left err -> print err >> usage

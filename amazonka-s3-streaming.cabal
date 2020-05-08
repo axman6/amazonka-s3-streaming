@@ -62,5 +62,6 @@ executable s3upload
                  , amazonka-s3-streaming
                  , conduit-extra
                  , conduit
+                 , lens
                  , text
 
