@@ -51,8 +51,6 @@ import           Data.ByteString                 ( ByteString )
 import qualified Data.ByteString                as BS
 import           Data.ByteString.Builder         ( stringUtf8 )
 import           Data.ByteString.Unsafe          (unsafeIndex)
-import qualified Data.Vector.Storable as VS
-import           Data.Vector.Storable.ByteString (vectorToByteString)
 import           Data.List                       ( unfoldr )
 import           Data.List.NonEmpty              ( nonEmpty, fromList )
 import Data.Text (Text)
