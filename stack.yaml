@@ -15,7 +15,7 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-13.18
+resolver: lts-15.11
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -39,10 +39,17 @@ packages:
 - '.'
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
-extra-deps: []
-
+extra-deps: 
+- git: https://github.com/brendanhay/amazonka
+  commit: ed7630edacc09e627ed0ee59126f4cdca0d73a0c
+  subdirs:
+    - amazonka
+    - amazonka-s3
+    - core
 # Override default flag values for local packages and extra-deps
-flags: {}
+flags:
+  amazonka-s3-streaming:
+    s3upload-exe: true
 
 # Extra package databases containing global packages
 extra-package-dbs: []
