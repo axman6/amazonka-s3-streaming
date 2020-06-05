@@ -62,6 +62,7 @@ import Control.Monad.Catch      ( onException )
 
 import Network.HTTP.Client ( defaultManagerSettings, managerConnCount, newManager )
 
+import           GHC.ForeignPtr                (finalizeForeignPtr)
 import           Foreign.ForeignPtr            (mallocForeignPtrBytes)
 import           Foreign.ForeignPtr.Unsafe     (unsafeForeignPtrToPtr)
 import qualified Data.ByteString as B
@@ -133,8 +134,9 @@ streamUpload mChunkSize multiPartUploadDesc =
                 => BucketName -> ObjectKey -> Text -> (Int, S)
                 -> m (Maybe CompletedPart)
     multiUpload bucket key upId (partnum, s) = do
-      buffer <- liftIO $ finaliseS s
-      res <- liftAWS $ send $ uploadPart bucket key partnum upId (toBody $ HashedBytes (hash buffer) buffer)
+      buffer@(PS fptr _ _) <- liftIO $ finaliseS s
+      !res <- liftAWS $ send $ uploadPart bucket key partnum upId (toBody $ HashedBytes (hash buffer) buffer)
+      liftIO $ finalizeForeignPtr fptr
       when (res ^. uprsResponseStatus /= 200) $
         fail "Failed to upload piece"
       logStr $ printf "\n**** Uploaded part %d" partnum
