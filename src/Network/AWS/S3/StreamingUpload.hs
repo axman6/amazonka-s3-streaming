@@ -17,10 +17,10 @@ module Network.AWS.S3.StreamingUpload
   ) where
 
 import Network.AWS
-       ( AWS, HasEnv(..), LogLevel(..), MonadAWS, getFileSize, hashedBody, hashedFileRange,
+       ( AWS, HasEnv(..), LogLevel(..), MonadAWS, getFileSize, hashedFileRange,
        liftAWS, runAWS, runResourceT, send, toBody )
 
-import Network.AWS.Data.Crypto ( Digest, SHA256, hash)
+import Network.AWS.Data.Crypto ( hash)
 import Network.AWS.Data.Body (HashedBody(..))
 
 import Network.AWS.S3.AbortMultipartUpload
@@ -31,26 +31,21 @@ import Network.AWS.S3.Types
        ( ObjectKey, CompletedPart, BucketName, cmuParts, completedMultipartUpload, completedPart, muKey, muUploadId )
 import Network.AWS.S3.UploadPart
 
-import Control.Applicative
-import Control.Category             ( (>>>) )
-import Control.Monad                ( forM_, when, (>=>) )
-import Control.Monad.Fail           ( MonadFail )
+import Control.Monad                ( forM_, when )
 import Control.Monad.IO.Class       ( MonadIO, liftIO )
 import Control.Monad.Morph          ( lift )
 import Control.Monad.Reader.Class   ( local )
-import Control.Monad.Trans.Resource ( ResourceT, MonadResource )
+import Control.Monad.Trans.Resource ( MonadResource )
 
-import           Data.Word                  ( Word8 )
-import           Conduit                    ( MonadUnliftIO(..), mapC, PrimMonad, mapM_CE )
-import           Data.Conduit               ( ConduitT, Void, await, catchC, handleC, (.|), leftover, yield, awaitForever )
+import           Conduit                    ( MonadUnliftIO(..), PrimMonad )
+import           Data.Conduit               ( ConduitT, Void, await, handleC, (.|), yield )
 import           Data.Conduit.Combinators   ( sinkList )
-import           Data.Conduit.List          ( sourceList )
 import           Data.Conduit.ConcurrentMap ( concurrentMapM_ )
 
 import           Data.ByteString                 ( ByteString )
 import qualified Data.ByteString                as BS
-import           Data.ByteString.Builder         ( stringUtf8 )
-import           Data.ByteString.Unsafe          (unsafeIndex)
+import           Data.ByteString.Builder         ( Builder, stringUtf8 )
+import           Data.ByteString.Builder.Extra   ( Next(..), byteStringCopy, runBuilder )
 import           Data.List                       ( unfoldr )
 import           Data.List.NonEmpty              ( nonEmpty, fromList )
 import Data.Text (Text)
@@ -64,18 +59,13 @@ import Control.Concurrent       ( newQSem, signalQSem, waitQSem )
 import Control.Concurrent.Async ( forConcurrently )
 import Control.Exception.Base   ( SomeException, bracket_ )
 import Control.Monad.Catch      ( onException )
-import System.Mem               ( performGC )
 
 import Network.HTTP.Client ( defaultManagerSettings, managerConnCount, newManager )
 
-import           Foreign.ForeignPtr            (ForeignPtr)
+import           Foreign.ForeignPtr            (mallocForeignPtrBytes)
 import           Foreign.ForeignPtr.Unsafe     (unsafeForeignPtrToPtr)
-import           Foreign.Ptr                   (Ptr)
 import qualified Data.ByteString as B
-import           Data.ByteString.Internal      (ByteString (PS), mallocByteString)
-import           Foreign.Storable              (pokeByteOff)
-
-
+import           Data.ByteString.Internal      (ByteString (PS)) -- , mallocByteString)
 
 
 type ChunkSize = Int
@@ -117,14 +107,14 @@ streamUpload mChunkSize multiPartUploadDesc =
       logger <- liftAWS $ view envLogger
       liftIO $ logger Debug $ stringUtf8 msg
 
-    startUpload :: (MonadUnliftIO m, MonadAWS m, MonadFail m, MonadResource m) =>
-                        ConduitT
-                        (Int, ByteString)
-                        Void
-                        m
-                        (Either
-                           (AbortMultipartUploadResponse, SomeException)
-                           CompleteMultipartUploadResponse)
+    startUpload :: 
+      ( MonadUnliftIO m
+      , MonadAWS m
+      , MonadFail m
+      , MonadResource m)
+      => ConduitT (Int, S) Void m
+          (Either (AbortMultipartUploadResponse, SomeException)
+                  CompleteMultipartUploadResponse)
     startUpload = do
       multiPartUpload <- lift $ send multiPartUploadDesc
       when (multiPartUpload ^. cmursResponseStatus /= 200) $
@@ -137,15 +127,13 @@ streamUpload mChunkSize multiPartUploadDesc =
 
       handleC (cancelMultiUploadConduit bucket key upId) $
         concurrentMapM_ 10 3 (multiUpload bucket key upId)
-        .| (finishMultiUploadConduit bucket key upId)
+        .| finishMultiUploadConduit bucket key upId
 
-    multiUpload :: (MonadUnliftIO m, MonadAWS m, MonadFail m, MonadResource m) =>
-                   BucketName
-                -> ObjectKey
-                -> Text
-                -> (Int, ByteString)
+    multiUpload :: (MonadUnliftIO m , MonadAWS m , MonadFail m , MonadResource m)
+                => BucketName -> ObjectKey -> Text -> (Int, S)
                 -> m (Maybe CompletedPart)
-    multiUpload bucket key upId (partnum, buffer) = do
+    multiUpload bucket key upId (partnum, s) = do
+      buffer <- liftIO $ finaliseS s
       res <- liftAWS $ send $ uploadPart bucket key partnum upId (toBody $ HashedBytes (hash buffer) buffer)
       when (res ^. uprsResponseStatus /= 200) $
         fail "Failed to upload piece"
@@ -154,29 +142,20 @@ streamUpload mChunkSize multiPartUploadDesc =
 
     -- collect all the parts
     finishMultiUploadConduit :: (MonadUnliftIO m, MonadAWS m)
-                             => BucketName
-                             -> ObjectKey
-                             -> Text
-                             -> ConduitT
-                                  (Maybe CompletedPart)
-                                  Void
-                                  m
+                             => BucketName -> ObjectKey -> Text 
+                             -> ConduitT (Maybe CompletedPart) Void m
                                   (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
     finishMultiUploadConduit bucket key upId = do
       parts <- sinkList
-      res <- lift $ send $ completeMultipartUpload bucket key upId & cMultipartUpload ?~ set cmuParts (sequenceA (fromList parts)) completedMultipartUpload
+      res <- lift $ send $ completeMultipartUpload bucket key upId 
+                         & cMultipartUpload ?~ set cmuParts (sequenceA (fromList parts)) completedMultipartUpload
       return $ Right res
 
     -- in case of an exception, return Left
-    cancelMultiUploadConduit :: (MonadUnliftIO m, MonadAWS m, MonadFail m) =>
-                                BucketName
-                             -> ObjectKey
-                             -> Text
-                             -> SomeException
-                             -> ConduitT
-                                  i
-                                  Void
-                                  m (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
+    cancelMultiUploadConduit :: (MonadUnliftIO m, MonadAWS m, MonadFail m) 
+                            => BucketName -> ObjectKey -> Text -> SomeException
+                             -> ConduitT i Void m
+                                  (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
     cancelMultiUploadConduit bucket key upId exc = do
       res <- lift $ send $ abortMultipartUpload bucket key upId
       return $ Left (res, exc)
@@ -299,41 +278,36 @@ nothingWhen f = justWhen (not . f)
 chunksOf :: Int -> BS.ByteString -> [BS.ByteString]
 chunksOf x = unfoldr (nothingWhen BS.null (BS.splitAt x))
 
--- Chunking with a raw buffer
+data S = S !Builder {-# UNPACK #-} !Int
 
-data S = S (ForeignPtr Word8) (Ptr Word8) {-# UNPACK #-} !Int
+newS :: S
+newS = S mempty 0
 
-newS :: ChunkSize -> IO S
-newS chunkSize = do
-    fptr <- mallocByteString chunkSize
-    return (S fptr (unsafeForeignPtrToPtr fptr) 0)
+appendS :: S -> ByteString -> S
+appendS (S builder len) bs = S (builder <> byteStringCopy bs) (len + B.length bs)
 
-processChunk :: ChunkSize -> ByteString -> S -> IO ([ByteString], S)
-processChunk chunkSize input =
-    loop id 0
-  where
-    loop front idxIn s@(S fptr ptr idxOut)
-        | idxIn >= B.length input = return (front [], s)
-        | otherwise = do
-            pokeByteOff ptr idxOut (unsafeIndex input idxIn)
-            let idxOut' = idxOut + 1
-                idxIn' = idxIn + 1
-            if idxOut' >= chunkSize
-                then do
-                    let bs = PS fptr 0 idxOut'
-                    s' <- newS chunkSize
-                    loop (front . (bs:)) idxIn' s'
-                else loop front idxIn' (S fptr ptr idxOut')
+finaliseS :: S -> IO ByteString
+finaliseS (S builder builderLen) = do
+  fptr <- mallocForeignPtrBytes builderLen
+  let ptr = unsafeForeignPtrToPtr fptr
+      bufWriter = runBuilder builder
+  bufWriter ptr builderLen >>= \case
+    (written, Done) 
+      | written == builderLen -> pure $! PS fptr 0 builderLen
+      | otherwise -> 
+          error $ "finaliseS: bytes written didn't match, expected: " <> show builderLen <> " got: " <> show written
+    (_written, _) -> error "Something went very wrong"
 
-processAndChunkOutputRaw :: MonadIO m => ChunkSize -> ConduitT ByteString ByteString m ()
-processAndChunkOutputRaw chunkSize =
-    liftIO (newS chunkSize) >>= loop
-  where
-    loop s@(S fptr _ len) = do
-        mbs <- await
-        case mbs of
-            Nothing -> yield $ PS fptr 0 len
-            Just bs -> do
-                (bss, s') <- liftIO $ processChunk chunkSize bs s
-                mapM_ yield bss
-                loop s'
+-- Left means the buffer needs more data to fill it
+-- Right means the buffer is full
+processChunk :: ChunkSize -> ByteString -> S -> IO (Either S S)
+processChunk chunkSize input s@(S _ builderLen)
+  | builderLen >= chunkSize = pure $! Right $! s
+  | otherwise = pure $! Left $! appendS s input
+
+processAndChunkOutputRaw :: MonadIO m => ChunkSize -> ConduitT ByteString S m ()
+processAndChunkOutputRaw chunkSize = loop newS where
+  loop !s = await >>= 
+    maybe (yield s) 
+          (\bs -> liftIO (processChunk chunkSize bs s) >>= either loop (\s' -> yield s' >> loop newS))
+
