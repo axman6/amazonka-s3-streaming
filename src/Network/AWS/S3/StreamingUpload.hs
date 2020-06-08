@@ -68,6 +68,8 @@ import           Foreign.ForeignPtr.Unsafe     (unsafeForeignPtrToPtr)
 import qualified Data.ByteString as B
 import           Data.ByteString.Internal      (ByteString (PS)) -- , mallocByteString)
 
+import System.Mem (performMajorGC)
+
 
 type ChunkSize = Int
 type NumThreads = Int
@@ -140,6 +142,7 @@ streamUpload mChunkSize multiPartUploadDesc =
       when (res ^. uprsResponseStatus /= 200) $
         fail "Failed to upload piece"
       logStr $ printf "\n**** Uploaded part %d" partnum
+      liftIO performMajorGC
       return $ completedPart partnum <$> (res ^. uprsETag)
 
     -- collect all the parts
