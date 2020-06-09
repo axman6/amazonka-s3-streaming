@@ -138,7 +138,7 @@ streamUpload mChunkSize multiPartUploadDesc =
                 -> m (Maybe CompletedPart)
     multiUpload bucket key upId (partnum, s) = do
       !buffer@(PS fptr _ _) <- liftIO $ finaliseS s
-      res <- liftAWS $ send $! uploadPart bucket key partnum upId $! toBody $! HashedBytes (hash buffer) buffer
+      res <- liftAWS $ send $! uploadPart bucket key partnum upId $! toBody $! (HashedBytes $! (hash buffer)) buffer
       let !_ = rwhnf res
       liftIO $ finalizeForeignPtr fptr
       when (res ^. uprsResponseStatus /= 200) $
