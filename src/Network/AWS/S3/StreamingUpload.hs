@@ -39,6 +39,7 @@ import Control.Monad.Trans.Resource ( MonadResource )
 
 import           Conduit                    ( MonadUnliftIO(..), PrimMonad )
 import           Data.Conduit               ( ConduitT, Void, await, handleC, (.|), yield )
+import qualified Data.Conduit.Combinators   as CC
 import           Data.Conduit.Combinators   ( sinkList )
 import           Data.Conduit.ConcurrentMap ( concurrentMapM_ )
 
@@ -130,7 +131,8 @@ streamUpload mChunkSize multiPartUploadDesc =
           key       = multiPartUploadDesc  ^. cmuKey
 
       handleC (cancelMultiUploadConduit bucket key upId) $
-        concurrentMapM_ 10 3 (multiUpload bucket key upId)
+        -- concurrentMapM_ 10 3 (multiUpload bucket key upId)
+        CC.mapM (multiUpload bucket key upId)
         .| finishMultiUploadConduit bucket key upId
 
     multiUpload :: (MonadUnliftIO m , MonadAWS m , MonadFail m , MonadResource m)
