@@ -3,6 +3,7 @@
 {-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Network.AWS.S3.StreamingUpload
   ( streamUpload
@@ -24,12 +25,13 @@ import Network.AWS.Data.Crypto ( hash)
 import Network.AWS.Data.Body (HashedBody(..))
 
 import Network.AWS.S3.AbortMultipartUpload
+    ( abortMultipartUpload, AbortMultipartUploadResponse )
 import Network.AWS.S3.CompleteMultipartUpload
 import Network.AWS.S3.CreateMultipartUpload
-import Network.AWS.S3.ListMultipartUploads
+import Network.AWS.S3.ListMultipartUploads ( listMultipartUploads, lmursUploads )
 import Network.AWS.S3.Types
        ( ObjectKey, CompletedPart, BucketName, cmuParts, completedMultipartUpload, completedPart, muKey, muUploadId )
-import Network.AWS.S3.UploadPart
+import Network.AWS.S3.UploadPart ( uploadPart, uprsETag, uprsResponseStatus )
 
 import Control.Monad                ( forM_, when )
 import Control.Monad.IO.Class       ( MonadIO, liftIO )
@@ -41,7 +43,6 @@ import           Conduit                    ( MonadUnliftIO(..), PrimMonad )
 import           Data.Conduit               ( ConduitT, Void, await, handleC, (.|), yield )
 import qualified Data.Conduit.Combinators   as CC
 import           Data.Conduit.Combinators   ( sinkList )
-import           Data.Conduit.ConcurrentMap ( concurrentMapM_ )
 
 import           Data.ByteString                 ( ByteString )
 import qualified Data.ByteString                as BS
@@ -131,7 +132,6 @@ streamUpload mChunkSize multiPartUploadDesc =
           key       = multiPartUploadDesc  ^. cmuKey
 
       handleC (cancelMultiUploadConduit bucket key upId) $
-        -- concurrentMapM_ 10 3 (multiUpload bucket key upId)
         CC.mapM (multiUpload bucket key upId)
         .| finishMultiUploadConduit bucket key upId
 
@@ -139,8 +139,8 @@ streamUpload mChunkSize multiPartUploadDesc =
                 => BucketName -> ObjectKey -> Text -> (Int, S)
                 -> m (Maybe CompletedPart)
     multiUpload bucket key upId (partnum, s) = do
-      !buffer@(PS fptr _ _) <- liftIO $ finaliseS s
-      res <- liftAWS $ send $! uploadPart bucket key partnum upId $! toBody $! (HashedBytes $! (hash buffer)) buffer
+      buffer@(PS fptr _ _) <- liftIO $ finaliseS s
+      res <- liftAWS $ send $! uploadPart bucket key partnum upId $! toBody $! (HashedBytes $! hash buffer) buffer
       let !_ = rwhnf res
       liftIO $ finalizeForeignPtr fptr
       when (res ^. uprsResponseStatus /= 200) $
