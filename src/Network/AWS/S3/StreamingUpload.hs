@@ -33,9 +33,9 @@ import Network.AWS.S3.UploadPart
 
 import Control.Monad                ( forM_, when )
 import Control.Monad.IO.Class       ( MonadIO, liftIO )
-import Control.Monad.Morph          ( lift )
 import Control.Monad.Reader.Class   ( local )
 import Control.Monad.Trans.Resource ( MonadResource )
+import Control.Monad.Trans          ( lift )
 
 import           Conduit                    ( MonadUnliftIO(..), PrimMonad )
 import           Data.Conduit               ( ConduitT, Void, await, handleC, (.|), yield )
@@ -112,7 +112,7 @@ streamUpload mChunkSize multiPartUploadDesc =
       logger <- liftAWS $ view envLogger
       liftIO $ logger Debug $ stringUtf8 msg
 
-    startUpload :: 
+    startUpload ::
       ( MonadUnliftIO m
       , MonadAWS m
       , MonadFail m
@@ -151,17 +151,17 @@ streamUpload mChunkSize multiPartUploadDesc =
 
     -- collect all the parts
     finishMultiUploadConduit :: (MonadUnliftIO m, MonadAWS m)
-                             => BucketName -> ObjectKey -> Text 
+                             => BucketName -> ObjectKey -> Text
                              -> ConduitT (Maybe CompletedPart) Void m
                                   (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
     finishMultiUploadConduit bucket key upId = do
       parts <- sinkList
-      res <- lift $ send $ completeMultipartUpload bucket key upId 
+      res <- lift $ send $ completeMultipartUpload bucket key upId
                          & cMultipartUpload ?~ set cmuParts (sequenceA (fromList parts)) completedMultipartUpload
       return $ Right res
 
     -- in case of an exception, return Left
-    cancelMultiUploadConduit :: (MonadUnliftIO m, MonadAWS m, MonadFail m) 
+    cancelMultiUploadConduit :: (MonadUnliftIO m, MonadAWS m, MonadFail m)
                             => BucketName -> ObjectKey -> Text -> SomeException
                              -> ConduitT i Void m
                                   (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
@@ -301,9 +301,9 @@ finaliseS (S builder builderLen) = do
   let ptr = unsafeForeignPtrToPtr fptr
       bufWriter = runBuilder builder
   bufWriter ptr builderLen >>= \case
-    (written, Done) 
+    (written, Done)
       | written == builderLen -> pure $! PS fptr 0 builderLen
-      | otherwise -> 
+      | otherwise ->
           error $ "finaliseS: bytes written didn't match, expected: " <> show builderLen <> " got: " <> show written
     (_written, _) -> error "Something went very wrong"
 
@@ -316,7 +316,7 @@ processChunk chunkSize input s@(S _ builderLen)
 
 processAndChunkOutputRaw :: MonadIO m => ChunkSize -> ConduitT ByteString S m ()
 processAndChunkOutputRaw chunkSize = loop newS where
-  loop !s = await >>= 
-    maybe (yield s) 
+  loop !s = await >>=
+    maybe (yield s)
           (\bs -> liftIO (processChunk chunkSize bs s) >>= either loop (\s' -> yield s' >> loop newS))
 
