@@ -1,20 +1,23 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
+
 module Main where
 
-
-import Data.Conduit        ( runConduit, (.|) )
-import Data.Conduit.Binary ( sourceHandle )
-import Data.Text           ( pack )
-import Data.Functor        ( (<&>) )
-import Control.Lens        ( set )
+import Control.Lens                         ( set )
+import Data.Conduit                         ( runConduit, (.|) )
+import Data.Conduit.Binary                  ( sourceHandle )
+import Data.Functor                         ( (<&>) )
+import Data.Text                            ( pack )
 import Network.AWS
+       ( AWS, Credentials(FromFile), HasEnv(envRegion), newEnv, runAWS, runResourceT )
 import Network.AWS.Data.Text                ( fromText )
-import Network.AWS.S3.CreateMultipartUpload
+import Network.AWS.S3.CreateMultipartUpload ( createMultipartUpload )
 import Network.AWS.S3.StreamingUpload
+       ( UploadLocation(FP), abortAllUploads, concurrentUpload, streamUpload )
 
 import Control.Monad.IO.Class ( liftIO )
-import System.Environment
+import System.Environment     ( getArgs )
 import System.IO              ( BufferMode(BlockBuffering), hSetBuffering, stdin )
 
 #if !MIN_VERSION_base(4,8,0)
@@ -27,7 +30,7 @@ main = do
   case args of
     (region:profile:credfile:bucket:key:file:_) ->
       case (,,,) <$> (FromFile <$> fromText (pack profile) <*> pure credfile)
-                 <*> (fromText (pack region) :: Either String Region)
+                 <*> fromText (pack region)
                  <*> fromText (pack bucket)
                  <*> fromText (pack key)
       of
@@ -35,7 +38,7 @@ main = do
           env <- newEnv creds <&> set envRegion reg
           hSetBuffering stdin (BlockBuffering Nothing)
           res <- runResourceT . runAWS env $ case file of
-                  "-" -> runConduit (sourceHandle stdin .| streamUpload Nothing (createMultipartUpload buck ky))
+                  "-" -> runConduit (sourceHandle stdin .| streamUpload @AWS Nothing (createMultipartUpload buck ky))
                           >>= liftIO . either print print
                   _   -> concurrentUpload Nothing Nothing (FP file) (createMultipartUpload buck ky)
                           >>= liftIO . print
@@ -44,7 +47,7 @@ main = do
         Left err -> print err >> usage
     ("abort":region:profile:credfile:bucket:_) ->
       case (,,) <$> (FromFile <$> fromText (pack profile) <*> pure credfile)
-                <*> (fromText (pack region) :: Either String Region)
+                <*> fromText (pack region)
                 <*> fromText (pack bucket)
       of
         Right (creds,reg,buck) -> do
