@@ -5,6 +5,8 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE ImportQualifiedPost #-}
+
 
 module Network.AWS.S3.StreamingUpload
   ( streamUpload
@@ -32,30 +34,29 @@ import Network.AWS.S3.CreateMultipartUpload
 import Network.AWS.S3.ListMultipartUploads ( listMultipartUploads, lmursUploads )
 import Network.AWS.S3.Types
        ( ObjectKey, CompletedPart, BucketName, cmuParts, completedMultipartUpload, completedPart, muKey, muUploadId )
-import Network.AWS.S3.UploadPart ( uploadPart, uprsETag, uprsResponseStatus )
+import Network.AWS.S3.UploadPart ( uploadPart, uprsETag, uprsResponseStatus, UploadPartResponse )
 
 import Control.Monad                ( forM_, when )
 import Control.Monad.Catch          (MonadThrow(..), onException, Exception)
 import Control.Monad.IO.Class       ( MonadIO, liftIO )
 import Control.Monad.Reader.Class   ( local )
-import Control.Monad.Trans.Resource ( MonadResource )
 import Control.Monad.Trans          ( lift )
 
-import           Conduit                    ( MonadUnliftIO(..), PrimMonad )
-import           Data.Conduit               ( ConduitT, Void, await, handleC, (.|), yield )
-import qualified Data.Conduit.Combinators   as CC
-import           Data.Conduit.Combinators   ( sinkList )
+import Conduit                    ( MonadUnliftIO(..) )
+import Data.Conduit               ( ConduitT, Void, await, handleC, (.|), yield )
+import Data.Conduit.Combinators   qualified as CC
+import Data.Conduit.Combinators   ( sinkList )
 
-import           Data.ByteString                 ( ByteString )
-import qualified Data.ByteString                as BS
-import           Data.ByteString.Builder         ( Builder, stringUtf8 )
-import           Data.ByteString.Builder.Extra   ( Next(..), byteStringCopy, runBuilder )
-import           Data.List                       ( unfoldr )
-import           Data.List.NonEmpty              ( nonEmpty, fromList )
+import Data.ByteString                 ( ByteString )
+import Data.ByteString                qualified as BS
+import Data.ByteString.Builder         ( Builder, stringUtf8 )
+import Data.ByteString.Builder.Extra   ( Next(..), byteStringCopy, runBuilder )
+import Data.List                       ( unfoldr )
+import Data.List.NonEmpty              ( nonEmpty, fromList )
 import Data.Text (Text)
 
 import Control.Lens           ( set, view )
-import Control.Lens.Operators
+import Control.Lens.Operators ( (&), (^.), (.~), (?~) )
 
 import Text.Printf ( printf )
 
@@ -65,14 +66,14 @@ import Control.Exception.Base   ( SomeException, bracket_ )
 
 import Network.HTTP.Client ( defaultManagerSettings, managerConnCount, newManager )
 
-import           GHC.ForeignPtr                (finalizeForeignPtr)
-import           Foreign.ForeignPtr            (mallocForeignPtrBytes)
-import           Foreign.ForeignPtr.Unsafe     (unsafeForeignPtrToPtr)
-import qualified Data.ByteString as B
-import           Data.ByteString.Internal      (ByteString (PS)) -- , mallocByteString)
+import GHC.ForeignPtr                (finalizeForeignPtr)
+import Foreign.ForeignPtr            (mallocForeignPtrBytes)
+import Foreign.ForeignPtr.Unsafe     (unsafeForeignPtrToPtr)
+import Data.ByteString qualified as B
+import Data.ByteString.Internal      (ByteString (PS))
 
-import System.Mem (performMajorGC)
-import Control.DeepSeq
+import Control.DeepSeq ( (<$!!>), rwhnf )
+import Type.Reflection (Typeable)
 
 
 type ChunkSize = Int
