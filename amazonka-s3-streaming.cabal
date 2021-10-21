@@ -29,15 +29,11 @@ library
                        , async            >= 2          && < 2.3
                        , bytestring       >= 0.10.8.0   && < 0.12
                        , deepseq
-                       , dlist            >= 0.8        && < 1.1
                        , exceptions       >= 0.8.2.1    && < 0.11
                        , http-client      >= 0.4        && < 0.8
                        , lens             >= 4.13       && < 5.1
                        , mtl              >= 2.2.1      && < 2.3
-                       , resourcet
                        , text
-                       , transformers     >= 0.5        && < 0.7
-                       , vector
 
 flag s3upload-exe
   Description: Whether to build the s3upload executable for uploading files using this library.
@@ -52,10 +48,10 @@ executable s3upload
   main-is: Main.hs
   ghc-options: -threaded -rtsopts "-with-rtsopts=-N -qg"
   default-language: Haskell2010
-  -- if flag(s3upload-exe)
+  if flag(s3upload-exe)
   buildable: True
-  -- else
-    --  buildable: False
+  else
+     buildable: False
   build-depends: base
                  , amazonka
                  , amazonka-core
