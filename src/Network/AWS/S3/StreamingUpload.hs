@@ -21,8 +21,7 @@ module Network.AWS.S3.StreamingUpload
   ) where
 
 import Network.AWS
-       ( AWS, HasEnv(..), LogLevel(..), MonadAWS, getFileSize, hashedFileRange, liftAWS, runAWS,
-       runResourceT, send, toBody )
+       ( HasEnv(..), LogLevel(..), getFileSize, hashedFileRange, runAWS, runResourceT, toBody )
 
 import Network.AWS.Data.Body   ( HashedBody(..) )
 import Network.AWS.Data.Crypto ( hash )
@@ -36,6 +35,8 @@ import Network.AWS.S3.Types
        muKey, muUploadId )
 import Network.AWS.S3.UploadPart
        ( UploadPartResponse, uploadPart, uprsETag, uprsResponseStatus )
+
+import Network.HTTP.Client ( defaultManagerSettings, managerConnCount, newManager )
 
 import Control.Monad              ( forM_, when )
 import Control.Monad.Catch        ( Exception, MonadThrow(..), onException )
@@ -59,13 +60,10 @@ import Data.Text                     ( Text )
 import Control.Lens           ( set, view )
 import Control.Lens.Operators ( (&), (.~), (?~), (^.) )
 
-import Text.Printf ( printf )
-
 import Control.Concurrent       ( newQSem, signalQSem, waitQSem )
 import Control.Concurrent.Async ( forConcurrently )
 import Control.Exception.Base   ( SomeException, bracket_ )
 
-import Network.HTTP.Client ( defaultManagerSettings, managerConnCount, newManager )
 
 import Data.ByteString           qualified as B
 import Data.ByteString.Internal  ( ByteString(PS) )
@@ -75,6 +73,7 @@ import GHC.ForeignPtr            ( finalizeForeignPtr )
 
 import Control.DeepSeq ( rwhnf, (<$!!>) )
 import Type.Reflection ( Typeable )
+import Control.Monad.Trans.AWS (AWSConstraint, send)
 
 
 type ChunkSize = Int
@@ -109,7 +108,7 @@ See the AWS documentation for more details.
 
 May throw 'Network.AWS.Error'
 -}
-streamUpload :: forall m. (MonadUnliftIO m, MonadAWS m, MonadThrow m)
+streamUpload :: forall m r. (MonadUnliftIO m, AWSConstraint r m, MonadThrow m)
              => Maybe ChunkSize -- ^ Optional chunk size
              -> CreateMultipartUpload -- ^ Upload location
              -> ConduitT ByteString Void m (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
@@ -123,7 +122,7 @@ streamUpload mChunkSize multiPartUploadDesc =
 
     logStr :: String -> m ()
     logStr msg  = do
-      logger <- liftAWS $ view envLogger
+      logger <- view envLogger
       liftIO $ logger Debug $ stringUtf8 msg
 
     startUpload :: ConduitT (Int, S) Void m
@@ -146,12 +145,12 @@ streamUpload mChunkSize multiPartUploadDesc =
     multiUpload :: BucketName -> ObjectKey -> Text -> (Int, S) -> m (Maybe CompletedPart)
     multiUpload bucket key upId (partnum, s) = do
       buffer@(PS fptr _ _) <- liftIO $ finaliseS s
-      res <- liftAWS $ send $! uploadPart bucket key partnum upId $! toBody $! (HashedBytes $! hash buffer) buffer
+      res <- send $! uploadPart bucket key partnum upId $! toBody $! (HashedBytes $! hash buffer) buffer
       let !_ = rwhnf res
       liftIO $ finalizeForeignPtr fptr
       when (res ^. uprsResponseStatus /= 200) $
         throwM $ FailedToUploadPiece res -- "Failed to upload piece"
-      logStr $ printf "\n**** Uploaded part %d" partnum
+      logStr $ "\n**** Uploaded part " <> show partnum
       return $! completedPart partnum <$!!> (res ^. uprsETag)
 
     -- collect all the parts
@@ -202,15 +201,15 @@ May throw `Network.AWS.Error`, or `IOError`; an attempt is made to cancel the
 multipart upload on any error, but this may also fail if, for example, the network
 connection has been broken. See `abortAllUploads` for a crude cleanup method.
 -}
-concurrentUpload :: forall m.
-  (MonadAWS m, MonadThrow m)
+concurrentUpload :: forall m r.
+  (AWSConstraint r m, MonadThrow m)
   => Maybe ChunkSize -- ^ Optional chunk size
   -> Maybe NumThreads -- ^ Optional number of threads to upload with
   -> UploadLocation -- ^ Whether to upload a file on disk or a `ByteString` that's already in memory.
   -> CreateMultipartUpload -- ^ Description of where to upload.
   -> m CompleteMultipartUploadResponse
 concurrentUpload mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
-  env <- liftAWS $ view environment
+  env <- view environment
   cmur <- send multiPartUploadDesc
   when (cmur ^. cmursResponseStatus /= 200) $
       throwM $ UnableToCreateMultipartUpload cmur
@@ -229,12 +228,12 @@ concurrentUpload mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
       mConnCount = managerConnCount defaultManagerSettings
       nThreads   = maybe mConnCount (max 1) mNumThreads
 
-      exec :: AWS a -> m a
+      exec :: m a -> m a
       exec act = if maybe False (> mConnCount) mNumThreads
               then do
                   mgr' <- liftIO $ newManager  defaultManagerSettings{managerConnCount = nThreads}
-                  liftAWS $ local (envManager .~ mgr') act
-              else liftAWS act
+                  local (envManager .~ mgr') act
+              else act
   exec $ flip onException (send (abortMultipartUpload bucket key upId)) $ do
       sem <- liftIO $ newQSem nThreads
       uploadResponses <- case uploadLoc of
@@ -271,7 +270,7 @@ concurrentUpload mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
               & cMultipartUpload ?~ set cmuParts parts completedMultipartUpload
 
 -- | Aborts all uploads in a given bucket - useful for cleaning up.
-abortAllUploads :: (MonadAWS m) => BucketName -> m ()
+abortAllUploads :: AWSConstraint r m => BucketName -> m ()
 abortAllUploads bucket = do
   rs <- send (listMultipartUploads bucket)
   forM_ (rs ^. lmursUploads) $ \mu -> do
