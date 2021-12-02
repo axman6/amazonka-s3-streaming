@@ -23,6 +23,7 @@ import Amazonka
        ( LogLevel(..), getFileSize, hashedFileRange, runResourceT, toBody, send )
 import Amazonka.Env (Env)
 import Amazonka.Auth (Env'(_envLogger, _envManager))
+import Amazonka.Prelude (MonadResource)
 
 import Amazonka.Data.Body   ( HashedBody(..) )
 import Amazonka.Crypto ( hash )
@@ -42,7 +43,6 @@ import Network.HTTP.Client ( defaultManagerSettings, managerConnCount, newManage
 import Control.Monad              ( forM_, when )
 import Control.Monad.Catch        ( Exception, MonadThrow(..), onException, MonadCatch )
 import Control.Monad.IO.Class     ( MonadIO, liftIO )
-import Control.Monad.Reader.Class ( local )
 import Control.Monad.Trans        ( lift )
 
 import Conduit                  ( MonadUnliftIO(..) )
@@ -58,7 +58,6 @@ import Data.List                     ( unfoldr )
 import Data.List.NonEmpty            ( fromList, nonEmpty )
 import Data.Text                     ( Text )
 
-import Control.Lens           ( set, view )
 import Control.Lens.Operators ( (&), (.~), (?~), (^.) )
 
 import Control.Concurrent       ( newQSem, signalQSem, waitQSem )
@@ -73,9 +72,7 @@ import Foreign.ForeignPtr.Unsafe ( unsafeForeignPtrToPtr )
 import GHC.ForeignPtr            ( finalizeForeignPtr )
 
 import Control.DeepSeq         ( rwhnf, (<$!!>) )
--- import Control.Monad.Trans.AWS ( AWSConstraint, send )
 import Type.Reflection         ( Typeable )
-import Amazonka.Prelude (MonadResource)
 
 
 type ChunkSize = Int
