@@ -148,7 +148,7 @@ streamUpload mChunkSize multiPartUploadDesc =
       let !_ = rwhnf res
       liftIO $ finalizeForeignPtr fptr
       when (res ^. uprsResponseStatus /= 200) $
-        throwM $ FailedToUploadPiece res -- "Failed to upload piece"
+        throwM $ FailedToUploadPiece res
       logStr $ "\n**** Uploaded part " <> show partnum
       return $! completedPart partnum <$!!> (res ^. uprsETag)
 
@@ -227,13 +227,13 @@ concurrentUpload mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
       mConnCount = managerConnCount defaultManagerSettings
       nThreads   = maybe mConnCount (max 1) mNumThreads
 
-      exec :: m a -> m a
-      exec act = if maybe False (> mConnCount) mNumThreads
+      withLocalThreadManager :: m a -> m a
+      withLocalThreadManager act = if maybe False (> mConnCount) mNumThreads
               then do
-                  mgr' <- liftIO $ newManager  defaultManagerSettings{managerConnCount = nThreads}
+                  mgr' <- liftIO $ newManager defaultManagerSettings{managerConnCount = nThreads}
                   local (envManager .~ mgr') act
               else act
-  exec $ flip onException (send (abortMultipartUpload bucket key upId)) $ do
+  withLocalThreadManager $ flip onException (send (abortMultipartUpload bucket key upId)) $ do
       sem <- liftIO $ newQSem nThreads
       uploadResponses <- case uploadLoc of
           BS bytes ->
