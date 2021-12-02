@@ -34,6 +34,7 @@ library
                        , lens             >= 4.13       && < 5.1
                        , mtl              >= 2.2.1      && < 2.3
                        , text
+                       , generic-lens     >= 2.0        && < 2.3
 
 flag s3upload-exe
   Description: Whether to build the s3upload executable for uploading files using this library.
