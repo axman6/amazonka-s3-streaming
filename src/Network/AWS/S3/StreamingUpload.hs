@@ -1,6 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ParallelListComp #-}
@@ -47,10 +46,10 @@ import Control.Monad.Trans        ( lift )
 import Conduit                  ( MonadUnliftIO(..) )
 import Data.Conduit             ( ConduitT, Void, await, handleC, yield, (.|) )
 import Data.Conduit.Combinators ( sinkList )
-import Data.Conduit.Combinators qualified as CC
+import qualified Data.Conduit.Combinators as CC
 
 import Data.ByteString               ( ByteString )
-import Data.ByteString               qualified as BS
+import qualified Data.ByteString as BS
 import Data.ByteString.Builder       ( Builder, stringUtf8 )
 import Data.ByteString.Builder.Extra ( Next(..), byteStringCopy, runBuilder )
 import Data.List                     ( unfoldr )
@@ -65,15 +64,15 @@ import Control.Concurrent.Async ( forConcurrently )
 import Control.Exception.Base   ( SomeException, bracket_ )
 
 
-import Data.ByteString           qualified as B
+import qualified Data.ByteString as B
 import Data.ByteString.Internal  ( ByteString(PS) )
 import Foreign.ForeignPtr        ( mallocForeignPtrBytes )
 import Foreign.ForeignPtr.Unsafe ( unsafeForeignPtrToPtr )
 import GHC.ForeignPtr            ( finalizeForeignPtr )
 
-import Control.DeepSeq ( rwhnf, (<$!!>) )
-import Type.Reflection ( Typeable )
-import Control.Monad.Trans.AWS (AWSConstraint, send)
+import Control.DeepSeq         ( rwhnf, (<$!!>) )
+import Control.Monad.Trans.AWS ( AWSConstraint, send )
+import Type.Reflection         ( Typeable )
 
 
 type ChunkSize = Int
