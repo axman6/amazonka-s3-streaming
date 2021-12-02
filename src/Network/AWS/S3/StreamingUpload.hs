@@ -107,7 +107,7 @@ See the AWS documentation for more details.
 
 May throw 'Network.AWS.Error'
 -}
-streamUpload :: forall m r. (MonadUnliftIO m, AWSConstraint r m, MonadThrow m)
+streamUpload :: forall m r. (MonadUnliftIO m, AWSConstraint r m)
              => Maybe ChunkSize -- ^ Optional chunk size
              -> CreateMultipartUpload -- ^ Upload location
              -> ConduitT ByteString Void m (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
@@ -201,7 +201,7 @@ multipart upload on any error, but this may also fail if, for example, the netwo
 connection has been broken. See `abortAllUploads` for a crude cleanup method.
 -}
 concurrentUpload :: forall m r.
-  (AWSConstraint r m, MonadThrow m)
+  AWSConstraint r m
   => Maybe ChunkSize -- ^ Optional chunk size
   -> Maybe NumThreads -- ^ Optional number of threads to upload with
   -> UploadLocation -- ^ Whether to upload a file on disk or a `ByteString` that's already in memory.
