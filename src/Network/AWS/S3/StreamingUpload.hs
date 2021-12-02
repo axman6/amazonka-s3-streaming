@@ -107,7 +107,7 @@ See the AWS documentation for more details.
 
 May throw 'Network.AWS.Error'
 -}
-streamUpload :: forall m r. (MonadUnliftIO m, MonadResource m, MonadThrow m)
+streamUpload :: forall m. (MonadUnliftIO m, MonadResource m, MonadThrow m)
              => Env
              -> Maybe ChunkSize -- ^ Optional chunk size
              -> CreateMultipartUpload -- ^ Upload location
@@ -204,7 +204,7 @@ May throw `Network.AWS.Error`, or `IOError`; an attempt is made to cancel the
 multipart upload on any error, but this may also fail if, for example, the network
 connection has been broken. See `abortAllUploads` for a crude cleanup method.
 -}
-concurrentUpload :: forall m r.
+concurrentUpload :: forall m.
   (MonadResource m, MonadCatch m)
   => Env
   -> Maybe ChunkSize -- ^ Optional chunk size
