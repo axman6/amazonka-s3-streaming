@@ -52,7 +52,7 @@ executable s3upload
     buildable: True
   else
      buildable: False
-  build-depends: base >= 4.9 && < 5
+  build-depends: base
                  , amazonka
                  , amazonka-core
                  , amazonka-s3
