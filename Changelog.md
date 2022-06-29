@@ -1,5 +1,8 @@
 # Changelog - amazonka-s3-streaming
 
+## 2.0.0.0
+ - Update all the things for Amazonka-2.0 - Thanks to @endgame, @domenkozar, @koterpillar, @mpickering, @jhrcek for your patience and input to the process (over the years...)
+
 ## 1.1.0.0
  - Adds MonadFail constraints, thanks @utdemir
 

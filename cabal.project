@@ -1,0 +1,8 @@
+-- For amazonka
+-- Multiple subdirs in a single `source-repository-package` stanza are supported by cabal-install >= 3.2.0.0.
+packages: .
+source-repository-package
+    type: git
+    location: https://github.com/brendanhay/amazonka
+    tag: 0d70474d888c5e5a43417ac9f7b408e7890ff853
+    subdir: lib/amazonka-core lib/amazonka lib/services/amazonka-s3 lib/services/amazonka-sts lib/services/amazonka-sso
