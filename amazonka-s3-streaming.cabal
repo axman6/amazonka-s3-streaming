@@ -19,7 +19,7 @@ tested-with:         GHC == 8.0.* || == 8.2.2 || == 8.4.* || == 8.6.* || == 8.8.
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Network.AWS.S3.StreamingUpload
+  exposed-modules:     Amazonka.S3.StreamingUpload
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wincomplete-uni-patterns
@@ -62,7 +62,7 @@ executable s3upload
   if flag(s3upload-exe)
     buildable: True
   else
-     buildable: False
+    buildable: False
   build-depends: base
                  , amazonka
                  , amazonka-s3

@@ -7,7 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 
-module Network.AWS.S3.StreamingUpload -- TODO: Rename to Amazonka
+module Amazonka.S3.StreamingUpload
   ( streamUpload
   , ChunkSize
   , minimumChunkSize
