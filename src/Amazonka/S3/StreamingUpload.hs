@@ -260,11 +260,10 @@ concurrentUpload env' mChunkSize mNumThreads uploadLoc
 -- | Aborts all uploads in a given bucket - useful for cleaning up.
 abortAllUploads :: MonadResource m => Env -> BucketName -> m ()
 abortAllUploads env buck = do
-  rs <- send env (newListMultipartUploads buck)
-  forM_ (uploads rs) $ \ups ->
-    forM_ ups $ \MultipartUpload'{key,uploadId} -> do
-      let mki = (,) <$> key <*> uploadId
-      forM_ mki $ \(key',uid) -> send env (newAbortMultipartUpload buck key' uid)
+  ListMultipartUploadsResponse' {uploads} <- send env $ newListMultipartUploads buck
+  flip (traverse_ . traverse_) uploads $ \MultipartUpload'{key, uploadId} -> do
+    let mki = (,) <$> key <*> uploadId
+    for_ mki $ \(key',uid) -> send env (newAbortMultipartUpload buck key' uid)
 
 
 
