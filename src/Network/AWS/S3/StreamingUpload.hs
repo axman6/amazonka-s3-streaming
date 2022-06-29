@@ -32,7 +32,8 @@ import Amazonka.S3.Types
        ( BucketName, CompletedPart, ObjectKey, newCompletedMultipartUpload, newCompletedPart)
 import Amazonka.S3.UploadPart ( UploadPartResponse, newUploadPart )
 
-import Network.HTTP.Client ( defaultManagerSettings, managerConnCount, newManager )
+import Network.HTTP.Client ( managerConnCount, newManager )
+import Network.HTTP.Client.TLS ( tlsManagerSettings )
 
 import Control.Monad              ( forM_, when )
 import Control.Monad.Catch        ( Exception, MonadThrow(..), onException, MonadCatch )
@@ -219,12 +220,12 @@ concurrentUpload env' mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
           let chunkSize' = maybe minimumChunkSize (max minimumChunkSize) mChunkSize
           in if len `div` chunkSize' >= 10000 then len `div` 9999 else chunkSize'
 
-      mConnCount = managerConnCount defaultManagerSettings
+      mConnCount = managerConnCount tlsManagerSettings
       nThreads   = maybe mConnCount (max 1) mNumThreads
 
   env <- if maybe False (> mConnCount) mNumThreads
               then do
-                  mgr' <- liftIO $ newManager defaultManagerSettings{managerConnCount = nThreads}
+                  mgr' <- liftIO $ newManager tlsManagerSettings{managerConnCount = nThreads}
                   pure env'{envManager = mgr'}
               else pure env'
   flip onException (send env (newAbortMultipartUpload buck k upId)) $ do
