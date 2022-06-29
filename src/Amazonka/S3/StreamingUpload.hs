@@ -29,7 +29,8 @@ import Amazonka.S3.CompleteMultipartUpload
        ( CompleteMultipartUpload(..), CompleteMultipartUploadResponse, newCompleteMultipartUpload )
 import Amazonka.S3.CreateMultipartUpload
        ( CreateMultipartUpload(..), CreateMultipartUploadResponse(..) )
-import Amazonka.S3.ListMultipartUploads    ( newListMultipartUploads, uploads )
+import Amazonka.S3.ListMultipartUploads
+       ( ListMultipartUploadsResponse(..), newListMultipartUploads, uploads )
 import Amazonka.S3.Types
        ( BucketName, CompletedMultipartUpload(..), CompletedPart, MultipartUpload(..),
        newCompletedMultipartUpload, newCompletedPart )
@@ -38,7 +39,6 @@ import Amazonka.S3.UploadPart              ( UploadPartResponse(..), newUploadPa
 import Network.HTTP.Client     ( managerConnCount, newManager )
 import Network.HTTP.Client.TLS ( tlsManagerSettings )
 
-import Control.Monad                ( forM_ )
 import Control.Monad.Catch          ( Exception, MonadCatch, onException )
 import Control.Monad.IO.Class       ( MonadIO, liftIO )
 import Control.Monad.Trans.Class    ( lift )
@@ -68,6 +68,7 @@ import Foreign.ForeignPtr.Unsafe ( unsafeForeignPtrToPtr )
 import GHC.ForeignPtr            ( finalizeForeignPtr )
 
 import Control.DeepSeq ( rwhnf, (<$!!>) )
+import Data.Foldable   ( for_, traverse_ )
 import Data.Typeable   ( Typeable )
 
 
