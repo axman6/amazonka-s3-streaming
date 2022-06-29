@@ -3,6 +3,6 @@
 packages: .
 source-repository-package
     type: git
-    location: https://github.com/brendanhay/amazonka
-    tag: 0ccede621e56fb6f240e4850e205cde82d0e4a4b
-    subdir: lib/amazonka-core lib/amazonka lib/services/amazonka-s3 lib/services/amazonka-sts
+    location: https://github.com/endgame/amazonka
+    tag: 4366a09827a0c5a76b9730a9ee3ce8ac09059633
+    subdir: lib/amazonka-core lib/amazonka lib/services/amazonka-s3 lib/services/amazonka-sts lib/services/amazonka-sso
