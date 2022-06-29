@@ -40,7 +40,7 @@ import Network.HTTP.Client.TLS ( tlsManagerSettings )
 import Control.Monad              ( forM_ )
 import Control.Monad.Catch        ( Exception, onException, MonadCatch )
 import Control.Monad.IO.Class     ( MonadIO, liftIO )
-import Control.Monad.Trans        ( lift )
+import Control.Monad.Trans.Class  ( lift )
 import Control.Monad.Trans.Resource (MonadResource, runResourceT)
 
 import Conduit                  ( MonadUnliftIO(..) )
