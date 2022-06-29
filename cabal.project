@@ -4,5 +4,5 @@ packages: .
 source-repository-package
     type: git
     location: https://github.com/endgame/amazonka
-    tag: 4366a09827a0c5a76b9730a9ee3ce8ac09059633
+    tag: f86336c6aa53a5d899f35f756cf2e53f3a6e2da3
     subdir: lib/amazonka-core lib/amazonka lib/services/amazonka-s3 lib/services/amazonka-sts lib/services/amazonka-sso
