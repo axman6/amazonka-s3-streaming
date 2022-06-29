@@ -10,7 +10,7 @@ import Data.Conduit.Binary                  ( sourceHandle )
 import Data.Functor                         ( (<&>) )
 import Data.Text                            ( pack )
 
-import Network.AWS.S3.StreamingUpload
+import Amazonka.S3.StreamingUpload
        ( UploadLocation(FP), abortAllUploads, concurrentUpload, streamUpload )
 
 import Amazonka (runResourceT)
