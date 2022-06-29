@@ -40,10 +40,8 @@ library
                        , exceptions       >= 0.8.2.1    && < 0.11
                        , http-client      >= 0.4        && < 0.8
                        , http-client-tls  >= 0.3        && < 0.4
-                       , lens             >= 4.13       && < 5.1
                        , mtl              >= 2.2.1      && < 2.3
                        , text
-                       , generic-lens     >= 2.0        && < 2.3
                        , resourcet
 
 flag s3upload-exe
@@ -69,5 +67,5 @@ executable s3upload
                  , amazonka-s3-streaming
                  , conduit-extra
                  , conduit
-                 , lens
                  , text
+                 , resourcet

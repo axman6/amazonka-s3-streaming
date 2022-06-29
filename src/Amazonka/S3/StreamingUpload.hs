@@ -1,10 +1,11 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 
 module Amazonka.S3.StreamingUpload
@@ -20,26 +21,27 @@ module Amazonka.S3.StreamingUpload
   ) where
 
 import Amazonka
-       ( LogLevel(..), HashedBody(..), getFileSize, hashedFileRange, runResourceT, toBody, send )
+       ( LogLevel(..), HashedBody(..), getFileSize, hashedFileRange, toBody, send )
 import Amazonka.Env (Env, Env'(envLogger, envManager))
 import Amazonka.Crypto ( hash )
 
 import Amazonka.S3.AbortMultipartUpload    ( AbortMultipartUploadResponse, newAbortMultipartUpload )
 import Amazonka.S3.CompleteMultipartUpload
 import Amazonka.S3.CreateMultipartUpload
-import Amazonka.S3.ListMultipartUploads    ( newListMultipartUploads )
+import Amazonka.S3.ListMultipartUploads    ( newListMultipartUploads, uploads )
 import Amazonka.S3.Types
-       ( BucketName, CompletedPart, ObjectKey, newCompletedMultipartUpload, newCompletedPart)
-import Amazonka.S3.UploadPart ( UploadPartResponse, newUploadPart )
+       ( BucketName, CompletedPart, MultipartUpload(..), newCompletedPart)
+import Amazonka.S3.Types.CompletedMultipartUpload
+import Amazonka.S3.UploadPart ( UploadPartResponse(..), newUploadPart )
 
 import Network.HTTP.Client ( managerConnCount, newManager )
 import Network.HTTP.Client.TLS ( tlsManagerSettings )
 
-import Control.Monad              ( forM_, when )
-import Control.Monad.Catch        ( Exception, MonadThrow(..), onException, MonadCatch )
+import Control.Monad              ( forM_ )
+import Control.Monad.Catch        ( Exception, onException, MonadCatch )
 import Control.Monad.IO.Class     ( MonadIO, liftIO )
 import Control.Monad.Trans        ( lift )
-import Control.Monad.Trans.Resource (MonadResource)
+import Control.Monad.Trans.Resource (MonadResource, runResourceT)
 
 import Conduit                  ( MonadUnliftIO(..) )
 import Data.Conduit             ( ConduitT, Void, await, handleC, yield, (.|) )
@@ -54,9 +56,6 @@ import Data.List                     ( unfoldr )
 import Data.List.NonEmpty            ( fromList, nonEmpty )
 import Data.Text                     ( Text )
 
-import Control.Lens.Operators ( (&), (.~), (?~), (^.) )
-import Data.Generics.Labels ()
-
 import Control.Concurrent       ( newQSem, signalQSem, waitQSem )
 import Control.Concurrent.Async ( forConcurrently )
 import Control.Exception.Base   ( SomeException, bracket_ )
@@ -68,7 +67,7 @@ import Foreign.ForeignPtr.Unsafe ( unsafeForeignPtrToPtr )
 import GHC.ForeignPtr            ( finalizeForeignPtr )
 
 import Control.DeepSeq         ( rwhnf, (<$!!>) )
-import Type.Reflection         ( Typeable )
+import Data.Typeable           ( Typeable )
 
 
 type ChunkSize = Int
@@ -103,12 +102,12 @@ See the AWS documentation for more details.
 
 May throw 'Network.AWS.Error'
 -}
-streamUpload :: forall m. (MonadUnliftIO m, MonadResource m, MonadThrow m)
+streamUpload :: forall m. (MonadUnliftIO m, MonadResource m)
              => Env
              -> Maybe ChunkSize -- ^ Optional chunk size
              -> CreateMultipartUpload -- ^ Upload location
              -> ConduitT ByteString Void m (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
-streamUpload env mChunkSize multiPartUploadDesc =
+streamUpload env mChunkSize multiPartUploadDesc@CreateMultipartUpload'{bucket = buck, key = k} =
   processAndChunkOutputRaw chunkSize
   .| enumerateConduit
   .| startUpload
@@ -125,46 +124,40 @@ streamUpload env mChunkSize multiPartUploadDesc =
                     (Either (AbortMultipartUploadResponse, SomeException)
                     CompleteMultipartUploadResponse)
     startUpload = do
-      multiPartUpload <- lift $ send env multiPartUploadDesc
+      CreateMultipartUploadResponse'{uploadId = upId} <- lift $ send env multiPartUploadDesc
       lift $ logStr "\n**** Created upload\n"
 
-      let upId = multiPartUpload     ^. #uploadId
-          buck = multiPartUploadDesc ^. #bucket
-          k    = multiPartUploadDesc ^. #key
+      handleC (cancelMultiUploadConduit upId) $
+        CC.mapM (multiUpload upId)
+        .| finishMultiUploadConduit upId
 
-      handleC (cancelMultiUploadConduit buck k upId) $
-        CC.mapM (multiUpload buck k upId)
-        .| finishMultiUploadConduit buck k upId
-
-    multiUpload :: BucketName -> ObjectKey -> Text -> (Int, S) -> m (Maybe CompletedPart)
-    multiUpload buck k upId (partnum, s) = do
+    multiUpload :: Text -> (Int, S) -> m (Maybe CompletedPart)
+    multiUpload upId (partnum, s) = do
       buffer@(PS fptr _ _) <- liftIO $ finaliseS s
-      res <- send env $! newUploadPart buck k partnum upId $! toBody $! (HashedBytes $! hash buffer) buffer
-      let !_ = rwhnf res
+      UploadPartResponse'{eTag} <- send env $! newUploadPart buck k partnum upId $! toBody $! (HashedBytes $! hash buffer) buffer
+      let !_ = rwhnf eTag
       liftIO $ finalizeForeignPtr fptr
-      when (res ^. #httpStatus /= 200) $
-        throwM $ FailedToUploadPiece res
       logStr $ "\n**** Uploaded part " <> show partnum
-      return $! newCompletedPart partnum <$!!> (res ^. #eTag)
+      return $! newCompletedPart partnum <$!!> eTag
 
     -- collect all the parts
-    finishMultiUploadConduit :: BucketName -> ObjectKey -> Text
+    finishMultiUploadConduit :: Text
                              -> ConduitT (Maybe CompletedPart) Void m
                                   (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
-    finishMultiUploadConduit buck k upId = do
+    finishMultiUploadConduit upId = do
       parts <- sinkList
-      res <- lift $ send env $ newCompleteMultipartUpload buck k upId
-               & #multipartUpload ?~
-                  (newCompletedMultipartUpload
-                    & #parts .~ (sequenceA (fromList parts)))
+      res <- lift $ send env $ (newCompleteMultipartUpload buck k upId)
+               { multipartUpload =
+                  Just $ newCompletedMultipartUpload {parts = sequenceA $ fromList parts}
+               }
 
       return $ Right res
 
     -- in case of an exception, return Left
-    cancelMultiUploadConduit :: BucketName -> ObjectKey -> Text -> SomeException
+    cancelMultiUploadConduit :: Text -> SomeException
                              -> ConduitT i Void m
                                   (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
-    cancelMultiUploadConduit buck k upId exc = do
+    cancelMultiUploadConduit upId exc = do
       res <- lift $ send env $ newAbortMultipartUpload buck k upId
       return $ Left (res, exc)
 
@@ -206,14 +199,13 @@ concurrentUpload :: forall m.
   -> UploadLocation -- ^ Whether to upload a file on disk or a `ByteString` that's already in memory.
   -> CreateMultipartUpload -- ^ Description of where to upload.
   -> m CompleteMultipartUploadResponse
-concurrentUpload env' mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
-  cmur <- send env' multiPartUploadDesc
+concurrentUpload env' mChunkSize mNumThreads uploadLoc
+                 multiPartUploadDesc@CreateMultipartUpload'{bucket = buck, key = k}
+  = do
+  CreateMultipartUploadResponse'{uploadId = upId} <- send env' multiPartUploadDesc
 
   let logStr :: MonadIO n => String -> n ()
       logStr = liftIO . envLogger env' Info . stringUtf8
-      buck   = multiPartUploadDesc  ^. #bucket
-      k      = multiPartUploadDesc  ^. #key
-      upId   = cmur                 ^. #uploadId
 
       calculateChunkSize :: Int -> Int
       calculateChunkSize len =
@@ -236,9 +228,9 @@ concurrentUpload env' mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
             in liftIO $ forConcurrently (zip [1..] $ chunksOf chunkSize bytes) $ \(partnum, chunk) ->
                 bracket_ (waitQSem sem) (signalQSem sem) $ do
                   logStr $ "Starting part: " ++ show partnum
-                  umr <- runResourceT $ send env . newUploadPart buck k partnum upId . toBody $ chunk
+                  UploadPartResponse'{eTag} <- runResourceT $ send env . newUploadPart buck k partnum upId . toBody $ chunk
                   logStr $ "Finished part: " ++ show partnum
-                  pure $ newCompletedPart partnum <$> (umr ^. #eTag)
+                  pure $ newCompletedPart partnum <$> eTag
 
           FP filePath -> do
             fsize <- liftIO $ getFileSize filePath
@@ -254,22 +246,23 @@ concurrentUpload env' mChunkSize mNumThreads uploadLoc multiPartUploadDesc = do
               bracket_ (waitQSem sem) (signalQSem sem) $ do
                 logStr $ "Starting file part: " ++ show partnum
                 chunkStream <- hashedFileRange filePath (fromIntegral off) (fromIntegral size)
-                uploadResp <- runResourceT $
+                UploadPartResponse'{eTag} <- runResourceT $
                   send env . newUploadPart buck k partnum upId . toBody $ chunkStream
                 logStr $ "Finished file part: " ++ show partnum
-                pure $ newCompletedPart partnum <$> (uploadResp ^. #eTag)
+                pure $ newCompletedPart partnum <$> eTag
 
       let parts = nonEmpty =<< sequence uploadResponses
-      send env $ newCompleteMultipartUpload buck k upId
-               & #multipartUpload ?~ (newCompletedMultipartUpload & #parts .~ parts)
+      send env $ (newCompleteMultipartUpload buck k upId)
+                  { multipartUpload = Just $ newCompletedMultipartUpload { parts } }
 
 -- | Aborts all uploads in a given bucket - useful for cleaning up.
 abortAllUploads :: MonadResource m => Env -> BucketName -> m ()
 abortAllUploads env buck = do
   rs <- send env (newListMultipartUploads buck)
-  forM_ (rs ^. #uploads . traverse) $ \mu -> do
-    let mki = (,) <$> mu ^. #key <*> mu ^. #uploadId
-    forM_ mki $ \(key',uid) -> send env (newAbortMultipartUpload buck key' uid)
+  forM_ (uploads rs) $ \ups ->
+    forM_ ups $ \MultipartUpload'{key,uploadId} -> do
+      let mki = (,) <$> key <*> uploadId
+      forM_ mki $ \(key',uid) -> send env (newAbortMultipartUpload buck key' uid)
 
 
 

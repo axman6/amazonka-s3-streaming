@@ -1,10 +1,8 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Main where
 
-import Control.Lens                         ( set )
 import Data.Conduit                         ( runConduit, (.|) )
 import Data.Conduit.Binary                  ( sourceHandle )
 import Data.Functor                         ( (<&>) )
@@ -13,13 +11,13 @@ import Data.Text                            ( pack )
 import Amazonka.S3.StreamingUpload
        ( UploadLocation(FP), abortAllUploads, concurrentUpload, streamUpload )
 
-import Amazonka (runResourceT)
 import Amazonka.Env (newEnv, envRegion)
 import Amazonka.Auth (discover)
 import Amazonka.S3.Types (BucketName(..), ObjectKey (..))
 import Amazonka.S3.CreateMultipartUpload    ( newCreateMultipartUpload )
 
 import Control.Monad.IO.Class ( liftIO )
+import Control.Monad.Trans.Resource ( runResourceT )
 import System.Environment     ( getArgs )
 import System.IO              ( BufferMode(BlockBuffering), hSetBuffering, stdin )
 
@@ -42,7 +40,7 @@ main = do
 
         print res
 
-    ("abort":region:profile:credfile:bucket:_) -> do
+    ("abort":bucket:_) -> do
           res <- runResourceT $ abortAllUploads env (BucketName $ pack bucket)
           print res
     _ -> usage
@@ -60,3 +58,4 @@ usage = putStrLn . unlines $
   , "Uses `newEnv discover` to make the Amazonka environment, so it wil look at"
   , "appropriate env vars, or ~/.aws/credentials, etc."
  ]
+
