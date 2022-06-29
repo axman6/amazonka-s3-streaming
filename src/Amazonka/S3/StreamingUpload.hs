@@ -1,12 +1,12 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE NamedFieldPuns #-}
-
 
 module Amazonka.S3.StreamingUpload
   ( streamUpload
@@ -20,36 +20,37 @@ module Amazonka.S3.StreamingUpload
   , module Amazonka.S3.CompleteMultipartUpload
   ) where
 
-import Amazonka
-       ( LogLevel(..), HashedBody(..), getFileSize, hashedFileRange, toBody, send )
-import Amazonka.Env (Env, Env'(envLogger, envManager))
+import Amazonka        ( HashedBody(..), LogLevel(..), getFileSize, hashedFileRange, send, toBody )
 import Amazonka.Crypto ( hash )
+import Amazonka.Env    ( Env, Env'(envLogger, envManager) )
 
 import Amazonka.S3.AbortMultipartUpload    ( AbortMultipartUploadResponse, newAbortMultipartUpload )
 import Amazonka.S3.CompleteMultipartUpload
+       ( CompleteMultipartUpload(..), CompleteMultipartUploadResponse, newCompleteMultipartUpload )
 import Amazonka.S3.CreateMultipartUpload
+       ( CreateMultipartUpload(..), CreateMultipartUploadResponse(..) )
 import Amazonka.S3.ListMultipartUploads    ( newListMultipartUploads, uploads )
 import Amazonka.S3.Types
-       ( BucketName, CompletedPart, MultipartUpload(..), newCompletedPart)
-import Amazonka.S3.Types.CompletedMultipartUpload
-import Amazonka.S3.UploadPart ( UploadPartResponse(..), newUploadPart )
+       ( BucketName, CompletedMultipartUpload(..), CompletedPart, MultipartUpload(..),
+       newCompletedMultipartUpload, newCompletedPart )
+import Amazonka.S3.UploadPart              ( UploadPartResponse(..), newUploadPart )
 
-import Network.HTTP.Client ( managerConnCount, newManager )
+import Network.HTTP.Client     ( managerConnCount, newManager )
 import Network.HTTP.Client.TLS ( tlsManagerSettings )
 
-import Control.Monad              ( forM_ )
-import Control.Monad.Catch        ( Exception, onException, MonadCatch )
-import Control.Monad.IO.Class     ( MonadIO, liftIO )
-import Control.Monad.Trans.Class  ( lift )
-import Control.Monad.Trans.Resource (MonadResource, runResourceT)
+import Control.Monad                ( forM_ )
+import Control.Monad.Catch          ( Exception, MonadCatch, onException )
+import Control.Monad.IO.Class       ( MonadIO, liftIO )
+import Control.Monad.Trans.Class    ( lift )
+import Control.Monad.Trans.Resource ( MonadResource, runResourceT )
 
 import Conduit                  ( MonadUnliftIO(..) )
 import Data.Conduit             ( ConduitT, Void, await, handleC, yield, (.|) )
 import Data.Conduit.Combinators ( sinkList )
-import qualified Data.Conduit.Combinators as CC
+import Data.Conduit.Combinators qualified as CC
 
 import Data.ByteString               ( ByteString )
-import qualified Data.ByteString as BS
+import Data.ByteString               qualified as BS
 import Data.ByteString.Builder       ( Builder, stringUtf8 )
 import Data.ByteString.Builder.Extra ( Next(..), byteStringCopy, runBuilder )
 import Data.List                     ( unfoldr )
@@ -60,14 +61,14 @@ import Control.Concurrent       ( newQSem, signalQSem, waitQSem )
 import Control.Concurrent.Async ( forConcurrently )
 import Control.Exception.Base   ( SomeException, bracket_ )
 
-import qualified Data.ByteString as B
+import Data.ByteString           qualified as B
 import Data.ByteString.Internal  ( ByteString(PS), toForeignPtr )
 import Foreign.ForeignPtr        ( mallocForeignPtrBytes )
 import Foreign.ForeignPtr.Unsafe ( unsafeForeignPtrToPtr )
 import GHC.ForeignPtr            ( finalizeForeignPtr )
 
-import Control.DeepSeq         ( rwhnf, (<$!!>) )
-import Data.Typeable           ( Typeable )
+import Control.DeepSeq ( rwhnf, (<$!!>) )
+import Data.Typeable   ( Typeable )
 
 
 type ChunkSize = Int

@@ -3,23 +3,23 @@
 
 module Main where
 
-import Data.Conduit                         ( runConduit, (.|) )
-import Data.Conduit.Binary                  ( sourceHandle )
-import Data.Functor                         ( (<&>) )
-import Data.Text                            ( pack )
+import Data.Conduit        ( runConduit, (.|) )
+import Data.Conduit.Binary ( sourceHandle )
+import Data.Functor        ( (<&>) )
+import Data.Text           ( pack )
 
 import Amazonka.S3.StreamingUpload
        ( UploadLocation(FP), abortAllUploads, concurrentUpload, streamUpload )
 
-import Amazonka.Env (newEnv, envRegion)
-import Amazonka.Auth (discover)
-import Amazonka.S3.Types (BucketName(..), ObjectKey (..))
-import Amazonka.S3.CreateMultipartUpload    ( newCreateMultipartUpload )
+import Amazonka.Auth                     ( discover )
+import Amazonka.Env                      ( envRegion, newEnv )
+import Amazonka.S3.CreateMultipartUpload ( newCreateMultipartUpload )
+import Amazonka.S3.Types                 ( BucketName(..), ObjectKey(..) )
 
-import Control.Monad.IO.Class ( liftIO )
+import Control.Monad.IO.Class       ( liftIO )
 import Control.Monad.Trans.Resource ( runResourceT )
-import System.Environment     ( getArgs )
-import System.IO              ( BufferMode(BlockBuffering), hSetBuffering, stdin )
+import System.Environment           ( getArgs )
+import System.IO                    ( BufferMode(BlockBuffering), hSetBuffering, stdin )
 
 main :: IO ()
 main = do
