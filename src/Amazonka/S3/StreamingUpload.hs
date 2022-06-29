@@ -61,7 +61,7 @@ import Control.Concurrent.Async ( forConcurrently )
 import Control.Exception.Base   ( SomeException, bracket_ )
 
 import qualified Data.ByteString as B
-import Data.ByteString.Internal  ( ByteString(PS) )
+import Data.ByteString.Internal  ( ByteString(PS), toForeignPtr )
 import Foreign.ForeignPtr        ( mallocForeignPtrBytes )
 import Foreign.ForeignPtr.Unsafe ( unsafeForeignPtrToPtr )
 import GHC.ForeignPtr            ( finalizeForeignPtr )
@@ -133,7 +133,8 @@ streamUpload env mChunkSize multiPartUploadDesc@CreateMultipartUpload'{bucket = 
 
     multiUpload :: Text -> (Int, S) -> m (Maybe CompletedPart)
     multiUpload upId (partnum, s) = do
-      buffer@(PS fptr _ _) <- liftIO $ finaliseS s
+      buffer <- liftIO $ finaliseS s
+      let (fptr,_,_) = toForeignPtr buffer
       UploadPartResponse'{eTag} <- send env $! newUploadPart buck k partnum upId $! toBody $! (HashedBytes $! hash buffer) buffer
       let !_ = rwhnf eTag
       liftIO $ finalizeForeignPtr fptr
