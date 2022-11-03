@@ -97,12 +97,12 @@ the 'CompleteMultipartUploadResponse', or if an exception is thrown,
 `AbortMultipartUploadResponse` and the exception as `SomeException`. If aborting
 the upload also fails then the exception caused by the call to abort will be thrown.
 
-'Network.AWS.S3.ListMultipartUploads' can be used to list any pending
+'Amazonka.S3.ListMultipartUploads' can be used to list any pending
 uploads - it is important to abort multipart uploads because you will
 be charged for storage of the parts until it is completed or aborted.
 See the AWS documentation for more details.
 
-May throw 'Network.AWS.Error'
+May throw 'Amazonka.Error'
 -}
 streamUpload :: forall m. (MonadUnliftIO m, MonadResource m)
              => Env
@@ -174,7 +174,7 @@ streamUpload env mChunkSize multiPartUploadDesc@CreateMultipartUpload'{bucket = 
           loop (i + 1)
     {-# INLINE enumerateConduit #-}
 
--- | Specifies whether to upload a file or 'ByteString
+-- | Specifies whether to upload a file or 'ByteString'.
 data UploadLocation
     = FP FilePath -- ^ A file to be uploaded
     | BS ByteString -- ^ A strict 'ByteString'
@@ -190,7 +190,7 @@ This considerably reduces the memory necessary compared to reading the contents
 into memory as a strict 'ByteString'. The usual caveats about mmaped files apply:
 if the file is modified during this operation, the data may become corrupt.
 
-May throw `Network.AWS.Error`, or `IOError`; an attempt is made to cancel the
+May throw `Amazonka.Error`, or `IOError`; an attempt is made to cancel the
 multipart upload on any error, but this may also fail if, for example, the network
 connection has been broken. See `abortAllUploads` for a crude cleanup method.
 -}
