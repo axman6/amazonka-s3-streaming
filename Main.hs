@@ -12,7 +12,7 @@ import Amazonka.S3.StreamingUpload
        ( UploadLocation(FP), abortAllUploads, concurrentUpload, streamUpload )
 
 import Amazonka.Auth                     ( discover )
-import Amazonka.Env                      ( envRegion, newEnv )
+import Amazonka.Env                      ( newEnv )
 import Amazonka.S3.CreateMultipartUpload ( newCreateMultipartUpload )
 import Amazonka.S3.Types                 ( BucketName(..), ObjectKey(..) )
 
@@ -58,4 +58,3 @@ usage = putStrLn . unlines $
   , "Uses `newEnv discover` to make the Amazonka environment, so it wil look at"
   , "appropriate env vars, or ~/.aws/credentials, etc."
  ]
-
