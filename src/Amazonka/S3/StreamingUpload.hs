@@ -22,7 +22,7 @@ module Amazonka.S3.StreamingUpload
 
 import Amazonka        ( HashedBody(..), LogLevel(..), getFileSize, hashedFileRange, send, toBody )
 import Amazonka.Crypto ( hash )
-import Amazonka.Env    ( Env, Env'(envLogger, envManager) )
+import Amazonka.Env    ( Env, logger, manager )
 
 import Amazonka.S3.AbortMultipartUpload    ( AbortMultipartUploadResponse, newAbortMultipartUpload )
 import Amazonka.S3.CompleteMultipartUpload
@@ -119,8 +119,7 @@ streamUpload env mChunkSize multiPartUploadDesc@CreateMultipartUpload'{bucket = 
 
     logStr :: String -> m ()
     logStr msg  = do
-      let logger = envLogger env
-      liftIO $ logger Debug $ stringUtf8 msg
+      liftIO $ logger env Debug $ stringUtf8 msg
 
     startUpload :: ConduitT (Int, S) Void m
                     (Either (AbortMultipartUploadResponse, SomeException)
@@ -208,7 +207,7 @@ concurrentUpload env' mChunkSize mNumThreads uploadLoc
   CreateMultipartUploadResponse'{uploadId = upId} <- send env' multiPartUploadDesc
 
   let logStr :: MonadIO n => String -> n ()
-      logStr = liftIO . envLogger env' Info . stringUtf8
+      logStr = liftIO . logger env' Info . stringUtf8
 
       calculateChunkSize :: Int -> Int
       calculateChunkSize len =
@@ -221,7 +220,7 @@ concurrentUpload env' mChunkSize mNumThreads uploadLoc
   env <- if maybe False (> mConnCount) mNumThreads
               then do
                   mgr' <- liftIO $ newManager tlsManagerSettings{managerConnCount = nThreads}
-                  pure env'{envManager = mgr'}
+                  pure env'{manager = mgr'}
               else pure env'
   flip onException (send env (newAbortMultipartUpload buck k upId)) $ do
       sem <- liftIO $ newQSem nThreads
