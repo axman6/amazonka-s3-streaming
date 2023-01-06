@@ -49,28 +49,27 @@ import Data.Conduit             ( ConduitT, Void, await, handleC, yield, (.|) )
 import Data.Conduit.Combinators ( sinkList )
 import Data.Conduit.Combinators qualified as CC
 
-import Data.ByteString               ( ByteString )
 import Data.ByteString               qualified as BS
 import Data.ByteString.Builder       ( Builder, stringUtf8 )
 import Data.ByteString.Builder.Extra ( Next(..), byteStringCopy, runBuilder )
-import Data.List                     ( unfoldr )
-import Data.List.NonEmpty            ( fromList, nonEmpty )
-import Data.Text                     ( Text )
+import Data.ByteString.Internal      ( ByteString(PS) )
+
+import Data.List          ( unfoldr )
+import Data.List.NonEmpty ( fromList, nonEmpty )
+import Data.Text          ( Text )
 
 import Control.Concurrent       ( newQSem, signalQSem, waitQSem )
 import Control.Concurrent.Async ( forConcurrently )
 import Control.Exception.Base   ( SomeException, bracket_ )
 
-import Data.ByteString           qualified as B
-import Data.ByteString.Internal  ( ByteString(PS), toForeignPtr )
-import Foreign.ForeignPtr        ( mallocForeignPtrBytes )
+import Foreign.ForeignPtr        ( ForeignPtr, mallocForeignPtrBytes )
 import Foreign.ForeignPtr.Unsafe ( unsafeForeignPtrToPtr )
-import GHC.ForeignPtr            ( finalizeForeignPtr )
 
 import Control.DeepSeq ( rwhnf, (<$!!>) )
 import Data.Foldable   ( for_, traverse_ )
+import Data.Function   ( (&) )
 import Data.Typeable   ( Typeable )
-import Data.Function ((&))
+import Data.Word       ( Word8 )
 
 
 type ChunkSize = Int
@@ -129,17 +128,18 @@ streamUpload env mChunkSize multiPartUploadDesc@CreateMultipartUpload'{bucket = 
       CreateMultipartUploadResponse'{uploadId = upId} <- lift $ send env multiPartUploadDesc
       lift $ logStr "\n**** Created upload\n"
 
+      fptr <- liftIO $ mallocForeignPtrBytes chunkSize
+
       handleC (cancelMultiUploadConduit upId) $
-        CC.mapM (multiUpload upId)
+        CC.mapM (multiUpload fptr upId)
         .| finishMultiUploadConduit upId
 
-    multiUpload :: Text -> (Int, S) -> m (Maybe CompletedPart)
-    multiUpload upId (partnum, s) = do
-      buffer <- liftIO $ finaliseS s
-      let (fptr,_,_) = toForeignPtr buffer
+    multiUpload :: ForeignPtr Word8 -> Text -> (Int, S) -> m (Maybe CompletedPart)
+    multiUpload fptr upId (partnum, s@(S _ builderLen)) = do
+      liftIO $ finaliseIntoS fptr chunkSize s
+      let buffer = PS fptr 0 builderLen
       UploadPartResponse'{eTag} <- send env $! newUploadPart buck k partnum upId $! toBody $! (HashedBytes $! hash buffer) buffer
       let !_ = rwhnf eTag
-      liftIO $ finalizeForeignPtr fptr
       logStr $ "\n**** Uploaded part " <> show partnum
       return $! newCompletedPart partnum <$!!> eTag
 
@@ -285,27 +285,29 @@ newS :: S
 newS = S mempty 0
 
 appendS :: S -> ByteString -> S
-appendS (S builder len) bs = S (builder <> byteStringCopy bs) (len + B.length bs)
+appendS (S builder len) bs = S (builder <> byteStringCopy bs) (len + BS.length bs)
 
-finaliseS :: S -> IO ByteString
-finaliseS (S builder builderLen) = do
-  fptr <- mallocForeignPtrBytes builderLen
-  let ptr = unsafeForeignPtrToPtr fptr
-  runBuilder builder ptr builderLen >>= \case
-    (written, Done)
-      | written == builderLen -> pure $! PS fptr 0 builderLen
-      | otherwise ->
-          error $ "finaliseS: bytes written didn't match, expected: " <> show builderLen <> " got: " <> show written
-    (_written, _) -> error "Something went very wrong"
+finaliseIntoS :: ForeignPtr Word8 -> Int -> S -> IO ()
+finaliseIntoS fptr maxSize (S builder builderLen) =
+  if builderLen > maxSize
+  then error $ "finaliseIntoS: Cannot write " <> show builderLen <> " bytes into buffer of size " <> show maxSize <> "!"
+  else do
+    let ptr = unsafeForeignPtrToPtr fptr
+    runBuilder builder ptr builderLen >>= \case
+      (written, Done)
+        | written == builderLen -> pure ()
+        | otherwise ->
+            error $ "finaliseIntoS: bytes written didn't match, expected: " <> show builderLen <> " got: " <> show written
+      (_written, _) -> error "Something went very wrong"
 
 -- @Right@ means the buffer needs more data to fill it
 -- @Left@ means the buffer is full so it should be yielded, and returns the
 -- remainder of the last input processed.
 processChunk :: ChunkSize -> ByteString -> S -> Either (S,ByteString) S
 processChunk chunkSize input s@(S _ builderLen)
-  | builderLen + B.length input <= chunkSize = Right $! appendS s input
+  | builderLen + BS.length input <= chunkSize = Right $! appendS s input
   | otherwise
-    = let (l,r) = B.splitAt (chunkSize - builderLen) input
+    = let (l,r) = BS.splitAt (chunkSize - builderLen) input
       in Left (appendS s l,r)
 
 processAndChunkOutputRaw :: MonadIO m => ChunkSize -> ConduitT ByteString S m ()
