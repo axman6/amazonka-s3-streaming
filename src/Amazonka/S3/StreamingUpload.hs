@@ -70,6 +70,7 @@ import GHC.ForeignPtr            ( finalizeForeignPtr )
 import Control.DeepSeq ( rwhnf, (<$!!>) )
 import Data.Foldable   ( for_, traverse_ )
 import Data.Typeable   ( Typeable )
+import Data.Function ((&))
 
 
 type ChunkSize = Int
@@ -283,9 +284,6 @@ data S = S !Builder {-# UNPACK #-} !Int
 newS :: S
 newS = S mempty 0
 
-newSFrom :: ByteString -> S
-newSFrom bs = S (byteStringCopy bs) (B.length bs)
-
 appendS :: S -> ByteString -> S
 appendS (S builder len) bs = S (builder <> byteStringCopy bs) (len + B.length bs)
 
@@ -293,24 +291,36 @@ finaliseS :: S -> IO ByteString
 finaliseS (S builder builderLen) = do
   fptr <- mallocForeignPtrBytes builderLen
   let ptr = unsafeForeignPtrToPtr fptr
-      bufWriter = runBuilder builder
-  bufWriter ptr builderLen >>= \case
+  runBuilder builder ptr builderLen >>= \case
     (written, Done)
       | written == builderLen -> pure $! PS fptr 0 builderLen
       | otherwise ->
           error $ "finaliseS: bytes written didn't match, expected: " <> show builderLen <> " got: " <> show written
     (_written, _) -> error "Something went very wrong"
 
--- Right means the buffer needs more data to fill it
--- Left means the buffer is full
-processChunk :: ChunkSize -> ByteString -> S -> IO (Either S S)
+-- @Right@ means the buffer needs more data to fill it
+-- @Left@ means the buffer is full so it should be yielded, and returns the
+-- remainder of the last input processed.
+processChunk :: ChunkSize -> ByteString -> S -> Either (S,ByteString) S
 processChunk chunkSize input s@(S _ builderLen)
-  | builderLen >= chunkSize = pure $! Left $! s
-  | otherwise               = pure $! Right $! appendS s input
+  | builderLen + B.length input <= chunkSize = Right $! appendS s input
+  | otherwise
+    = let (l,r) = B.splitAt (chunkSize - builderLen) input
+      in Left (appendS s l,r)
 
 processAndChunkOutputRaw :: MonadIO m => ChunkSize -> ConduitT ByteString S m ()
-processAndChunkOutputRaw chunkSize = loop newS where
-  loop !s = await >>=
-    maybe (yield s)
-          (\bs -> liftIO (processChunk chunkSize bs s) >>= either (\s' -> yield s' >> loop (newSFrom bs)) loop)
-
+processAndChunkOutputRaw chunkSize = awaitLoop newS where
+  awaitLoop !s =
+    await >>= maybe (yield s)
+      (\bs ->
+        processChunk chunkSize bs s
+          & either
+            (\(full,remainder) -> yield full >> chunkLoop remainder newS)
+            awaitLoop
+      )
+  -- Handle inputs which are larger than the chunkSize
+  chunkLoop bs s =
+    processChunk chunkSize bs s
+      & either
+          (\(full,remainder) -> yield full >> chunkLoop remainder newS)
+          awaitLoop
