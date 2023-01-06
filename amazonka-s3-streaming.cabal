@@ -9,12 +9,12 @@ license:             BSD3
 license-file:        LICENSE
 author:              Alex Mason
 maintainer:          amazonka-s3-streaming@me.axman6.com
-copyright:           Alex Mason, Copyright (c) 2016 Commonwealth Scientific and Industrial Research Organisation (CSIRO)
+copyright:           Copyright © 2023 Alex Mason, Copyright © 2016 Commonwealth Scientific and Industrial Research Organisation (CSIRO)
 category:            Network, AWS, Cloud, Distributed Computing
 build-type:          Simple
 extra-source-files:  README.md, Changelog.md
 cabal-version:       >=1.10
-tested-with:         GHC ==8.10.7 || ==9.0.2 || ==9.2.2
+tested-with:         GHC ==9.4.4 || ==9.2.2 || ==9.0.2 || ==8.10.7
 
 
 library
