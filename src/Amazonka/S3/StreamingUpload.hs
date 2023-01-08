@@ -113,7 +113,7 @@ streamUpload :: forall m. (MonadUnliftIO m, MonadResource m)
              -> CreateMultipartUpload -- ^ Upload location
              -> ConduitT ByteString Void m (Either (AbortMultipartUploadResponse, SomeException) CompleteMultipartUploadResponse)
 streamUpload env mChunkSize multiPartUploadDesc@CreateMultipartUpload'{bucket = buck, key = k} = do
-  buffer <- liftIO $ Buffer chunkSize <$> mallocForeignPtrBytes chunkSize
+  buffer <- liftIO $ allocBuffer chunkSize
   unsafeWriteChunksToBuffer buffer
     .| enumerateConduit
     .| startUpload buffer
@@ -178,7 +178,7 @@ streamUpload env mChunkSize multiPartUploadDesc@CreateMultipartUpload'{bucket = 
     {-# INLINE enumerateConduit #-}
 
 -- The number of bytes remaining in a buffer, and the pointer that backs it.
-data Buffer = Buffer !Int !(ForeignPtr Word8)
+data Buffer = Buffer {remaining :: !Int, _fptr :: !(ForeignPtr Word8)}
 
 data PutResult
     = Ok Buffer         -- Didn't fill the buffer, updated buffer.
@@ -187,12 +187,12 @@ data PutResult
 data BufferResult = FullBuffer | Incomplete Int
 
 -- Accepts @ByteString@s and writes them into @Buffer@. When the buffer is full,
--- @FullBuffer@ is emitted. If there is no more input, @Final@ is emitted with
+-- @FullBuffer@ is emitted. If there is no more input, @Incomplete@ is emitted with
 -- the number of bytes remaining in the buffer.
 unsafeWriteChunksToBuffer :: MonadIO m => Buffer -> ConduitT ByteString BufferResult m ()
 unsafeWriteChunksToBuffer buffer0 = awaitLoop buffer0 where
-  awaitLoop buf@(Buffer remaining _) =
-    await >>= maybe (yield $ Incomplete remaining)
+  awaitLoop buf =
+    await >>= maybe (yield $ Incomplete $ remaining buf)
       (liftIO . putBuffer buf >=> \case
         Full next -> yield FullBuffer *> chunkLoop buffer0 next
         Ok buf'   -> awaitLoop buf'
@@ -203,17 +203,19 @@ unsafeWriteChunksToBuffer buffer0 = awaitLoop buffer0 where
     Ok buf'   -> awaitLoop buf'
 
 bufferToByteString :: Buffer -> BufferResult -> ByteString
-bufferToByteString (Buffer bufSize fptr) res = case res of
-    FullBuffer      -> PS fptr 0 bufSize
-    Incomplete remaining -> PS fptr 0 (bufSize - remaining)
+bufferToByteString (Buffer bufSize fptr) FullBuffer             = PS fptr 0 bufSize
+bufferToByteString (Buffer bufSize fptr) (Incomplete remaining) = PS fptr 0 (bufSize - remaining)
+
+allocBuffer :: Int -> IO Buffer
+allocBuffer chunkSize = Buffer chunkSize <$> mallocForeignPtrBytes chunkSize
 
 putBuffer :: Buffer -> ByteString -> IO PutResult
-putBuffer buffer@(Buffer remaining _) bs
-  | BS.length bs <= remaining = Ok <$> unsafeWriteBuffer buffer bs
+putBuffer buffer bs
+  | BS.length bs <= remaining buffer =
+      Ok <$> unsafeWriteBuffer buffer bs
   | otherwise = do
-      let (l,r) = BS.splitAt remaining bs
-      _ <- unsafeWriteBuffer buffer l
-      pure $ Full r
+      let (remainder,rest) = BS.splitAt (remaining buffer) bs
+      Full rest <$ unsafeWriteBuffer buffer remainder
 
 -- The length of the bytestring must be less than or equal to the number
 -- of bytes remaining.
