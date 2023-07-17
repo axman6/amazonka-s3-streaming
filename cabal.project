@@ -4,5 +4,5 @@ packages: .
 source-repository-package
     type: git
     location: https://github.com/brendanhay/amazonka
-    tag: cfe2584aef0b03c86650372d362c74f237925d8c
+    tag: 31f3d044d84912b99e396a97085a9678e699d91f
     subdir: lib/amazonka-core lib/amazonka lib/services/amazonka-s3 lib/services/amazonka-sts lib/services/amazonka-sso
