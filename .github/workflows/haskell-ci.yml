@@ -163,35 +163,6 @@ jobs:
           echo "package amazonka-s3-streaming" >> cabal.project
           echo "    ghc-options: -Werror=missing-methods" >> cabal.project
           cat >> cabal.project <<EOF
-          source-repository-package
-            type:     git
-            location: https://github.com/brendanhay/amazonka
-            tag:      31f3d044d84912b99e396a97085a9678e699d91f
-            subdir:   lib/amazonka-core
-
-          source-repository-package
-            type:     git
-            location: https://github.com/brendanhay/amazonka
-            tag:      31f3d044d84912b99e396a97085a9678e699d91f
-            subdir:   lib/amazonka
-
-          source-repository-package
-            type:     git
-            location: https://github.com/brendanhay/amazonka
-            tag:      31f3d044d84912b99e396a97085a9678e699d91f
-            subdir:   lib/services/amazonka-s3
-
-          source-repository-package
-            type:     git
-            location: https://github.com/brendanhay/amazonka
-            tag:      31f3d044d84912b99e396a97085a9678e699d91f
-            subdir:   lib/services/amazonka-sts
-
-          source-repository-package
-            type:     git
-            location: https://github.com/brendanhay/amazonka
-            tag:      31f3d044d84912b99e396a97085a9678e699d91f
-            subdir:   lib/services/amazonka-sso
           EOF
           $HCPKG list --simple-output --names-only | perl -ne 'for (split /\s+/) { print "constraints: $_ installed\n" unless /^(amazonka-s3-streaming)$/; }' >> cabal.project.local
           cat cabal.project
