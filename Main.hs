@@ -50,7 +50,7 @@ usage = putStrLn . unlines $
   [ "Usage:"
   , ""
   , "  Upload file:"
-  , "    s3upload upload <bucket> <object key> <file to upload>"
+  , "    s3upload upload <bucket> <object key> <file to upload> OR \"-\" for stdin"
   , ""
   , "  Abort all unfinished uploads for bucket:"
   , "    s3upload abort <bucket>"
