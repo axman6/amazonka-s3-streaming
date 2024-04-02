@@ -3,16 +3,17 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
     haskell-flake.url = "github:srid/haskell-flake";
+    pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
   };
   outputs = inputs@{ self, nixpkgs, flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = nixpkgs.lib.systems.flakeExposed;
-      imports = [ inputs.haskell-flake.flakeModule ];
+      imports = [
+        inputs.haskell-flake.flakeModule
+        inputs.pre-commit-hooks.flakeModule
+      ];
 
       perSystem = { self', pkgs, ... }: {
-
-        # Typically, you just want a single project named "default". But
-        # multiple projects are also possible, each using different GHC version.
         haskellProjects.default = {
           # The base package set representing a specific GHC version.
           # By default, this is pkgs.haskellPackages.
@@ -47,7 +48,15 @@
           #  tools = hp: { fourmolu = hp.fourmolu; ghcid = null; };
 
            hlsCheck.enable = true;
+           pre-commit.settings.hooks = {
+            cabal-fmt.enable = true;
+            hlint.enable = true;
+            nixpkgs-fmt.enable = true;
+            ormolu.enable = true;
           };
+          };
+
+
         };
 
         # haskell-flake doesn't set the default package, but you can do it here.
