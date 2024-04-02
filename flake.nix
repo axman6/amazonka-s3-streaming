@@ -18,7 +18,7 @@
         haskellProjects.default = {
           # The base package set representing a specific GHC version.
           # By default, this is pkgs.haskellPackages.
-          # You may also create your own. See https://zero-to-flakes.com/haskell-flake/package-set
+          # See https://zero-to-flakes.com/haskell-flake/package-set
           # basePackages = pkgs.haskellPackages;
 
           # Extra package information. See https://zero-to-flakes.com/haskell-flake/dependency
@@ -41,14 +41,14 @@
           # };
 
           devShell = {
-           enable = true;
-           mkShellArgs.shellHook = config.pre-commit.installationScript;
+            enable = true;
 
-           # Programs you want to make available in the shell.
-           # Default programs can be disabled by setting to 'null'
-          #  tools = hp: { fourmolu = hp.fourmolu; ghcid = null; };
+            # Programs you want to make available in the shell.
+            # Default programs can be disabled by setting to 'null'
+            # tools = hp: { fourmolu = hp.fourmolu; ghcid = null; };
 
-           hlsCheck.enable = true;
+            hlsCheck.enable = true;
+            mkShellArgs.shellHook = config.pre-commit.installationScript;
           };
         };
 
