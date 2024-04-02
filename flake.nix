@@ -5,6 +5,7 @@
     haskell-flake.url = "github:srid/haskell-flake";
     pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
   };
+
   outputs = inputs@{ self, nixpkgs, flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = nixpkgs.lib.systems.flakeExposed;
@@ -13,7 +14,7 @@
         inputs.pre-commit-hooks.flakeModule
       ];
 
-      perSystem = { self', pkgs, ... }: {
+      perSystem = { self', pkgs, config, ... }: {
         haskellProjects.default = {
           # The base package set representing a specific GHC version.
           # By default, this is pkgs.haskellPackages.
@@ -40,22 +41,21 @@
           # };
 
           devShell = {
-           # Enabled by default
            enable = true;
+           mkShellArgs.shellHook = config.pre-commit.installationScript;
 
            # Programs you want to make available in the shell.
            # Default programs can be disabled by setting to 'null'
           #  tools = hp: { fourmolu = hp.fourmolu; ghcid = null; };
 
            hlsCheck.enable = true;
-           pre-commit.settings.hooks = {
-            cabal-fmt.enable = true;
-            hlint.enable = true;
-            nixpkgs-fmt.enable = true;
           };
-          };
+        };
 
-
+        pre-commit.settings.hooks = {
+          cabal-fmt.enable = true;
+          hlint.enable = true;
+          nixpkgs-fmt.enable = true;
         };
 
         # haskell-flake doesn't set the default package, but you can do it here.
