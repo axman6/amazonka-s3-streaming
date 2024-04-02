@@ -52,7 +52,6 @@
             cabal-fmt.enable = true;
             hlint.enable = true;
             nixpkgs-fmt.enable = true;
-            ormolu.enable = true;
           };
           };
 
